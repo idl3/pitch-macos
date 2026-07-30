@@ -27,7 +27,7 @@ struct MenuView: View {
             HStack {
                 Text("Pitch")
                 Slider(value: $player.pitchCents, in: -1200...1200, step: 100)
-                    .onChange(of: player.pitchCents) { player.updatePitch() }
+                    .onChange(of: player.pitchCents) { _, _ in player.updatePitch() }
                 Text("\(Int(player.pitchCents)) c")
                     .monospacedDigit()
                     .frame(width: 55, alignment: .trailing)
@@ -36,7 +36,7 @@ struct MenuView: View {
             HStack {
                 Text("Volume")
                 Slider(value: $player.volume, in: 0...2)
-                    .onChange(of: player.volume) { player.updateVolume() }
+                    .onChange(of: player.volume) { _, _ in player.updateVolume() }
                 Text(String(format: "%.1fx", player.volume))
                     .frame(width: 40, alignment: .trailing)
             }

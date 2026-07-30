@@ -15,8 +15,12 @@ struct OutputDevice: Identifiable, Hashable {
 @MainActor
 final class PitchSystemAudio: ObservableObject {
     @Published var isEnabled = false
-    @Published var pitchCents: Float = 0
-    @Published var volume: Float = 1.0
+    @Published var pitchCents: Float = 0 {
+        didSet { timePitch?.pitch = pitchCents }
+    }
+    @Published var volume: Float = 1.0 {
+        didSet { engine?.mainMixerNode.volume = volume }
+    }
     @Published var outputDevices: [OutputDevice] = []
     @Published var selectedOutputID: AudioDeviceID? = nil {
         didSet { if selectedOutputID != oldValue { applySelectedOutput() } }

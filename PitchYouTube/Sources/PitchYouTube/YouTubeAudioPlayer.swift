@@ -20,20 +20,20 @@ final class YouTubeAudioPlayer: ObservableObject {
             return
         }
         status = "Downloading…"
-        Task.detached(priority: .userInitiated) {
-            let file = await self.downloadAudio(url: url)
-            await MainActor.run {
+        Task.detached(priority: .userInitiated) { [weak self, url] in
+            let file = Self.downloadAudio(url: url)
+            await MainActor.run { [weak self] in
                 if let file {
-                    self.setup(file: file)
+                    self?.setup(file: file)
                 } else {
-                    self.status = "Download failed. Is yt-dlp installed?"
+                    self?.status = "Download failed. Is yt-dlp installed?"
                 }
             }
         }
     }
 
-    nonisolated private func downloadAudio(url: URL) -> URL? {
-        let downloader = Self.ytDlpPath() else { return nil }
+    nonisolated private static func downloadAudio(url: URL) -> URL? {
+        guard let downloader = Self.ytDlpPath() else { return nil }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -75,9 +75,13 @@ final class YouTubeAudioPlayer: ObservableObject {
             timePitch.rate = 1.0
             engine.mainMixerNode.volume = volume
 
-            player.scheduleFile(audioFile, at: nil) {
-                self.isPlaying = false
-                self.status = "Finished"
+            player.scheduleFile(audioFile, at: nil) { [weak self] in
+                Task {
+                    await MainActor.run { [weak self] in
+                        self?.isPlaying = false
+                        self?.status = "Finished"
+                    }
+                }
             }
             try engine.start()
             player.play()
