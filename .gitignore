@@ -1,0 +1,7 @@
+.DS_Store
+.build
+*.app
+*.xcodeproj
+*.xcworkspace
+.swiftpm
+Package.resolved
