@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreAudio
 
 struct MenuView: View {
     @ObservedObject var audio: PitchSystemAudio

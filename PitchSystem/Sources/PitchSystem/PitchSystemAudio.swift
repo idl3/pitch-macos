@@ -4,6 +4,7 @@ import AudioToolbox
 import Darwin
 import Foundation
 import SwiftUI
+import TPCircularBuffer
 
 struct OutputDevice: Identifiable, Hashable {
     let audioID: AudioDeviceID
@@ -134,11 +135,11 @@ final class PitchSystemAudio: ObservableObject {
 
         // 1. Tap everything except this process to avoid feedback.
         let ownPID = getpid()
-        let excludeIDs = processObjectID(for: ownPID).map { [NSNumber(value: $0)] } ?? []
+        let excludeIDs = processObjectID(for: ownPID).map { [$0] } ?? []
         let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: excludeIDs)
         let tapUUID = UUID()
         tapDescription.uuid = tapUUID
-        tapDescription.muteBehavior = .muted
+        tapDescription.muteBehavior = CATapMuteBehavior(rawValue: 1) ?? tapDescription.muteBehavior
         tapDescription.isPrivate = true
         tapDescription.name = "PitchSystem Tap"
 
@@ -247,13 +248,12 @@ final class PitchSystemAudio: ObservableObject {
 
         // 5. Feed the ring buffer from the aggregate IOProc.
         let ioBlock: AudioDeviceIOBlock = { [ring] _, inInputData, _, _, _ in
-            guard inInputData.pointee.mNumberBuffers > 0 else { return noErr }
+            guard inInputData.pointee.mNumberBuffers > 0 else { return }
             let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer<AudioBufferList>(mutating: inInputData))
             for buffer in list {
                 guard let data = buffer.mData else { continue }
                 _ = ring.write(data, length: buffer.mDataByteSize)
             }
-            return noErr
         }
 
         var procID: AudioDeviceIOProcID?
@@ -272,6 +272,7 @@ final class PitchSystemAudio: ObservableObject {
     }
 
     private func cleanup() {
+        guard #available(macOS 14.2, *) else { return }
         if let procID = ioProcID, aggregateID != 0 {
             AudioDeviceStop(aggregateID, procID)
             AudioDeviceDestroyIOProcID(aggregateID, procID)
@@ -293,6 +294,7 @@ final class PitchSystemAudio: ObservableObject {
     }
 
     private func processObjectID(for pid: pid_t) -> AudioObjectID? {
+        guard #available(macOS 14.2, *) else { return nil }
         var pid = pid
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyTranslatePIDToProcessObject,
