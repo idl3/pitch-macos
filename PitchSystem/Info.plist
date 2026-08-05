@@ -10,6 +10,8 @@
     <string>codes.ernest.pitch-system</string>
     <key>CFBundleExecutable</key>
     <string>PitchSystem</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

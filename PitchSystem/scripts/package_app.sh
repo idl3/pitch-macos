@@ -35,6 +35,9 @@ mkdir -p "${MACOS_DIR}" "${CONTENTS_DIR}/Resources"
 cp "${PRODUCT_PATH}" "${MACOS_DIR}/${APP_NAME}"
 chmod +x "${MACOS_DIR}/${APP_NAME}"
 cp "${ROOT_DIR}/Info.plist" "${CONTENTS_DIR}/Info.plist"
+if [[ -f "${ROOT_DIR}/Resources/AppIcon.icns" ]]; then
+    cp "${ROOT_DIR}/Resources/AppIcon.icns" "${CONTENTS_DIR}/Resources/AppIcon.icns"
+fi
 
 if command -v codesign >/dev/null 2>&1; then
     codesign --force --deep --sign - "${APP_BUNDLE}" >/dev/null 2>&1 || true
