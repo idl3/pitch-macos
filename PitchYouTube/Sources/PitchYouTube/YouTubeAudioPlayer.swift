@@ -1,3 +1,4 @@
+import AppKit
 import AVFAudio
 import Foundation
 
@@ -13,6 +14,15 @@ final class YouTubeAudioPlayer: ObservableObject {
     private var player: AVAudioPlayerNode?
     private var timePitch: AVAudioUnitTimePitch?
     private var currentFile: AVAudioFile?
+    private var currentTempDirectory: URL?
+
+    init() {
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { [weak self] in
+                self?.stop()
+            }
+        }
+    }
 
     func load() {
         guard let url = URL(string: urlString), !urlString.isEmpty else {
@@ -20,19 +30,22 @@ final class YouTubeAudioPlayer: ObservableObject {
             return
         }
         status = "Downloading…"
+        stop()
         Task.detached(priority: .userInitiated) { [weak self, url] in
-            let file = Self.downloadAudio(url: url)
-            await MainActor.run { [weak self] in
-                if let file {
-                    self?.setup(file: file)
-                } else {
+            guard let (file, directory) = Self.downloadAudio(url: url) else {
+                await MainActor.run { [weak self] in
                     self?.status = "Download failed. Is yt-dlp installed?"
                 }
+                return
+            }
+            await MainActor.run { [weak self] in
+                self?.currentTempDirectory = directory
+                self?.setup(file: file)
             }
         }
     }
 
-    nonisolated private static func downloadAudio(url: URL) -> URL? {
+    nonisolated private static func downloadAudio(url: URL) -> (file: URL, directory: URL)? {
         guard let downloader = Self.ytDlpPath() else { return nil }
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         do {
@@ -47,14 +60,14 @@ final class YouTubeAudioPlayer: ObservableObject {
             ]
             try process.run()
             process.waitUntilExit()
-            return process.terminationStatus == 0 ? Self.firstAudioFile(in: tmp) : nil
+            guard process.terminationStatus == 0, let file = Self.firstAudioFile(in: tmp) else { return nil }
+            return (file, tmp)
         } catch {
             return nil
         }
     }
 
     private func setup(file: URL) {
-        stop()
         engine = AVAudioEngine()
         player = AVAudioPlayerNode()
         timePitch = AVAudioUnitTimePitch()
@@ -89,6 +102,14 @@ final class YouTubeAudioPlayer: ObservableObject {
             status = "Playing"
         } catch {
             status = "Playback error: \(error.localizedDescription)"
+            cleanupTempDirectory()
+        }
+    }
+
+    private func cleanupTempDirectory() {
+        if let directory = currentTempDirectory {
+            try? FileManager.default.removeItem(at: directory)
+            currentTempDirectory = nil
         }
     }
 
@@ -115,6 +136,7 @@ final class YouTubeAudioPlayer: ObservableObject {
         timePitch = nil
         engine = nil
         currentFile = nil
+        cleanupTempDirectory()
         isPlaying = false
         status = "Stopped"
     }
