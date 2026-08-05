@@ -9,7 +9,7 @@
     <key>CFBundleIdentifier</key>
     <string>codes.ernest.tonos</string>
     <key>CFBundleExecutable</key>
-    <string>PitchSystem</string>
+    <string>Tonos</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -25,8 +25,8 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>LSUIElement</key>
-    <false/>
+    <true/>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>PitchSystem captures system audio so it can transpose pitch in real time.</string>
+    <string>Tonos captures system audio so it can transpose pitch in real time.</string>
 </dict>
 </plist>

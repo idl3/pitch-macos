@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="PitchSystem"
-BUNDLE_ID="codes.ernest.pitch-system"
+APP_NAME="Tonos"
+BUNDLE_ID="codes.ernest.tonos"
 BUILD_MODE="${1:-debug}"
 
 if [[ "${BUILD_MODE}" != "debug" && "${BUILD_MODE}" != "release" ]]; then
