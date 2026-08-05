@@ -5,14 +5,17 @@ struct PitchSystemApp: App {
     @StateObject private var audio = PitchSystemAudio()
 
     var body: some Scene {
-        WindowGroup("PitchSystem") {
+        WindowGroup("Tonos") {
             MenuView(audio: audio)
                 .frame(minWidth: 320, minHeight: 240)
         }
         .windowResizability(.contentSize)
 
-        MenuBarExtra("PitchSystem", systemImage: "slider.horizontal.below.rectangle") {
+        MenuBarExtra {
             MenuView(audio: audio)
+        } label: {
+            Image(systemName: "slider.horizontal.below.rectangle")
+                .renderingMode(.template)
         }
         .menuBarExtraStyle(.window)
     }

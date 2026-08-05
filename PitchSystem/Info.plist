@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>PitchSystem</string>
+    <string>Tonos</string>
     <key>CFBundleDisplayName</key>
-    <string>PitchSystem</string>
+    <string>Tonos</string>
     <key>CFBundleIdentifier</key>
-    <string>codes.ernest.pitch-system</string>
+    <string>codes.ernest.tonos</string>
     <key>CFBundleExecutable</key>
     <string>PitchSystem</string>
     <key>CFBundleIconFile</key>

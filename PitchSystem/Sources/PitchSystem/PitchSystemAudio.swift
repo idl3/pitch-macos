@@ -13,11 +13,26 @@ struct OutputDevice: Identifiable, Hashable {
     var id: AudioDeviceID { audioID }
 }
 
+enum PitchControlMode: String, CaseIterable {
+    case semitones = "Semitones"
+    case cents = "Cents"
+}
+
 @MainActor
 final class PitchSystemAudio: ObservableObject {
     @Published var isEnabled = false
     @Published var pitchCents: Float = 0 {
         didSet { timePitch?.pitch = pitchCents }
+    }
+    @Published var pitchSemitones: Int = 0 {
+        didSet {
+            if pitchControlMode == .semitones {
+                pitchCents = Float(pitchSemitones) * 100
+            }
+        }
+    }
+    @Published var pitchControlMode: PitchControlMode = .semitones {
+        didSet { syncPitchForMode() }
     }
     @Published var volume: Float = 1.0 {
         didSet { engine?.mainMixerNode.volume = volume }
@@ -26,7 +41,7 @@ final class PitchSystemAudio: ObservableObject {
     @Published var selectedOutputID: AudioDeviceID? = nil {
         didSet { if selectedOutputID != oldValue { applySelectedOutput() } }
     }
-    @Published var statusText = "Stopped"
+    @Published var statusText = ""
 
     private var engine: AVAudioEngine?
     private var timePitch: AVAudioUnitTimePitch?
@@ -36,32 +51,33 @@ final class PitchSystemAudio: ObservableObject {
     private var aggregateID: AudioObjectID = 0
     private var ioProcID: AudioDeviceIOProcID?
     private var asbd = AudioStreamBasicDescription()
-    private let ioQueue = DispatchQueue(label: "codes.ernest.pitch-system.io", qos: .userInteractive)
+    private let ioQueue = DispatchQueue(label: "codes.ernest.tonos.io", qos: .userInteractive)
     private let ringCapacity = UInt32(1 << 19)
+    private var deviceListener: AudioObjectPropertyListenerBlock?
 
     init() {
         refreshOutputDevices()
+        startListeningForDeviceChanges()
     }
 
-    func start() {
-        guard !isEnabled else { return }
-        statusText = "Starting…"
-        do {
-            try setup()
-            try engine?.start()
-            isEnabled = true
-            statusText = "Running"
-        } catch {
-            statusText = "Error: \(error.localizedDescription)"
+    func setEnabled(_ enabled: Bool) {
+        guard enabled != isEnabled else { return }
+        if enabled {
+            do {
+                try setup()
+                try engine?.start()
+                isEnabled = true
+                statusText = ""
+            } catch {
+                cleanup()
+                statusText = "Error: \(error.localizedDescription)"
+                isEnabled = false
+            }
+        } else {
             cleanup()
+            isEnabled = false
+            statusText = ""
         }
-    }
-
-    func stop() {
-        guard isEnabled else { return }
-        cleanup()
-        isEnabled = false
-        statusText = "Stopped"
     }
 
     func refreshOutputDevices() {
@@ -123,8 +139,56 @@ final class PitchSystemAudio: ObservableObject {
             return
         }
         if isEnabled {
-            stop()
-            start()
+            setEnabled(false)
+            setEnabled(true)
+        }
+    }
+
+    private func startListeningForDeviceChanges() {
+        guard deviceListener == nil else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
+            Task { @MainActor [weak self] in
+                self?.refreshOutputDevices()
+            }
+        }
+        let status = AudioObjectAddPropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            DispatchQueue.main,
+            listener
+        )
+        if status == noErr {
+            deviceListener = listener
+        }
+    }
+
+    private func stopListeningForDeviceChanges() {
+        guard let listener = deviceListener else { return }
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        AudioObjectRemovePropertyListenerBlock(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            DispatchQueue.main,
+            listener
+        )
+        deviceListener = nil
+    }
+
+    private func syncPitchForMode() {
+        switch pitchControlMode {
+        case .semitones:
+            pitchSemitones = Int(round(pitchCents / 100))
+        case .cents:
+            break
         }
     }
 
@@ -141,7 +205,7 @@ final class PitchSystemAudio: ObservableObject {
         tapDescription.uuid = tapUUID
         tapDescription.muteBehavior = CATapMuteBehavior(rawValue: 1) ?? tapDescription.muteBehavior
         tapDescription.isPrivate = true
-        tapDescription.name = "PitchSystem Tap"
+        tapDescription.name = "Tonos Tap"
 
         var newTapID: AudioObjectID = 0
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
@@ -164,8 +228,8 @@ final class PitchSystemAudio: ObservableObject {
 
         // 3. Tap-only aggregate device (HFP / sample-rate-change safe).
         let aggregateDesc: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "PitchSystem Aggregate",
-            kAudioAggregateDeviceUIDKey: "codes.ernest.pitch-system.tap.\(tapUUID.uuidString)",
+            kAudioAggregateDeviceNameKey: "Tonos Aggregate",
+            kAudioAggregateDeviceUIDKey: "codes.ernest.tonos.tap.\(tapUUID.uuidString)",
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapListKey: [

@@ -11,8 +11,11 @@ struct PitchYouTubeApp: App {
         }
         .windowResizability(.contentSize)
 
-        MenuBarExtra("PitchYouTube", systemImage: "play.rectangle.on.rectangle") {
+        MenuBarExtra {
             MenuView(player: player)
+        } label: {
+            Image(systemName: "play.rectangle.on.rectangle")
+                .renderingMode(.template)
         }
         .menuBarExtraStyle(.window)
     }

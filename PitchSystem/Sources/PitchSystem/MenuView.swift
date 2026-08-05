@@ -7,17 +7,45 @@ struct MenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Toggle("Enable pitch shift", isOn: $audio.isEnabled)
-                .onChange(of: audio.isEnabled) { _, active in
-                    active ? audio.start() : audio.stop()
-                }
+            Toggle("Enable pitch shift", isOn: Binding(
+                get: { audio.isEnabled },
+                set: { audio.setEnabled($0) }
+            ))
+            .toggleStyle(.switch)
 
-            HStack {
-                Text("Pitch")
-                Slider(value: $audio.pitchCents, in: -2400...2400, step: 100)
-                Text("\(Int(audio.pitchCents)) c")
-                    .monospacedDigit()
-                    .frame(width: 60, alignment: .trailing)
+            Picker("Mode", selection: $audio.pitchControlMode) {
+                ForEach(PitchControlMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if audio.pitchControlMode == .semitones {
+                HStack {
+                    Text("Pitch")
+                    Spacer()
+                    Button {
+                        audio.pitchSemitones = max(-12, audio.pitchSemitones - 1)
+                    } label: {
+                        Text("−").frame(minWidth: 24)
+                    }
+                    Text("\(audio.pitchSemitones) st")
+                        .monospacedDigit()
+                        .frame(width: 55, alignment: .center)
+                    Button {
+                        audio.pitchSemitones = min(12, audio.pitchSemitones + 1)
+                    } label: {
+                        Text("+").frame(minWidth: 24)
+                    }
+                }
+            } else {
+                HStack {
+                    Text("Pitch")
+                    Slider(value: $audio.pitchCents, in: -2400...2400, step: 100)
+                    Text("\(Int(audio.pitchCents)) c")
+                        .monospacedDigit()
+                        .frame(width: 60, alignment: .trailing)
+                }
             }
 
             HStack {
@@ -27,7 +55,7 @@ struct MenuView: View {
                     .frame(width: 40, alignment: .trailing)
             }
 
-            Picker("Output", selection: $audio.selectedOutputID) {
+            Picker("Play through", selection: $audio.selectedOutputID) {
                 Text("System default").tag(nil as AudioDeviceID?)
                 ForEach(audio.outputDevices) { device in
                     Text(device.name).tag(device.audioID as AudioDeviceID?)
@@ -35,16 +63,18 @@ struct MenuView: View {
             }
             .pickerStyle(.menu)
 
-            Text(audio.statusText)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if !audio.statusText.isEmpty {
+                Text(audio.statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             Button("Quit") {
                 NSApplication.shared.terminate(nil)
             }
         }
         .padding()
-        .frame(width: 300)
+        .frame(width: 320)
     }
 }
