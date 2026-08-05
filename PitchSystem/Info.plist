@@ -24,8 +24,6 @@
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>LSUIElement</key>
-    <true/>
     <key>NSAudioCaptureUsageDescription</key>
     <string>Tonos captures system audio so it can transpose pitch in real time.</string>
 </dict>
