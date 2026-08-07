@@ -35,8 +35,8 @@ mkdir -p "${MACOS_DIR}" "${CONTENTS_DIR}/Resources"
 cp "${PRODUCT_PATH}" "${MACOS_DIR}/${APP_NAME}"
 chmod +x "${MACOS_DIR}/${APP_NAME}"
 cp "${ROOT_DIR}/Info.plist" "${CONTENTS_DIR}/Info.plist"
-if [[ -f "${ROOT_DIR}/Resources/AppIcon.icns" ]]; then
-    cp "${ROOT_DIR}/Resources/AppIcon.icns" "${CONTENTS_DIR}/Resources/AppIcon.icns"
+if [[ -d "${ROOT_DIR}/Resources" ]]; then
+    cp -R "${ROOT_DIR}/Resources/" "${CONTENTS_DIR}/Resources/"
 fi
 
 if command -v codesign >/dev/null 2>&1; then

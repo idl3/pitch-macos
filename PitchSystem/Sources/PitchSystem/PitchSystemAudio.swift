@@ -136,14 +136,14 @@ final class PitchSystemAudio: ObservableObject {
         didSet {
             guard !isUpdatingVocalBlend else { return }
             audioParams.setVocalBlend(mono: vocalMono, karaoke: vocalKaraoke)
-            updateVocalRemovalModeFromBlend()
+            markVocalRemovalModeCustomIfNeeded()
         }
     }
     @Published var vocalKaraoke: Float = 0.0 {
         didSet {
             guard !isUpdatingVocalBlend else { return }
             audioParams.setVocalBlend(mono: vocalMono, karaoke: vocalKaraoke)
-            updateVocalRemovalModeFromBlend()
+            markVocalRemovalModeCustomIfNeeded()
         }
     }
     @Published var dualMonoOutput: Bool = true {
@@ -356,22 +356,24 @@ final class PitchSystemAudio: ObservableObject {
         isUpdatingVocalBlend = false
     }
 
-    private func updateVocalRemovalModeFromBlend() {
-        let m = vocalMono
-        let k = vocalKaraoke
-        let near: (Float, Float) -> Bool = { abs($0 - $1) < 0.01 }
-        if near(m, 0) && near(k, 0) {
-            vocalRemovalMode = .off
-        } else if near(m, 1) && near(k, 0) {
-            vocalRemovalMode = .mono
-        } else if near(m, 0) && near(k, 1) {
-            vocalRemovalMode = .karaoke
-        } else if near(m, 0.25) && near(k, 0.75) {
-            vocalRemovalMode = .wide
-        } else if near(m, 0.2) && near(k, 1) {
-            vocalRemovalMode = .aggressive
-        } else {
-            vocalRemovalMode = .custom
+    private func markVocalRemovalModeCustomIfNeeded() {
+        if vocalRemovalMode == .custom || vocalRemovalMode == .off { return }
+        let (expectedMono, expectedKaraoke) = blendForMode(vocalRemovalMode)
+        let tolerance: Float = 0.01
+        if abs(vocalMono - expectedMono) <= tolerance && abs(vocalKaraoke - expectedKaraoke) <= tolerance {
+            return
+        }
+        vocalRemovalMode = .custom
+    }
+
+    private func blendForMode(_ mode: VocalRemovalMode) -> (Float, Float) {
+        switch mode {
+        case .off: return (0, 0)
+        case .mono: return (1, 0)
+        case .wide: return (0.25, 0.75)
+        case .karaoke: return (0, 1)
+        case .aggressive: return (0.2, 1)
+        case .custom: return (vocalMono, vocalKaraoke)
         }
     }
 

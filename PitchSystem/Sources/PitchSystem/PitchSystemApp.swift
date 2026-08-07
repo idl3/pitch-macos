@@ -54,13 +54,35 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         item.autosaveName = "codes.ernest.tonos"
         item.behavior = .terminationOnRemoval
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "slider.horizontal.below.rectangle", accessibilityDescription: "Tonos")
+            button.image = statusBarIcon() ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Tonos")
             button.toolTip = "Tonos"
             button.action = #selector(showPopover(_:))
             button.target = self
         }
         statusItem = item
         MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.tonos")
+    }
+
+    private func statusBarIcon() -> NSImage? {
+        return rotatedSymbolIcon(name: "mic.fill", size: 22, rotation: .pi / 4)
+            ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Tonos")
+    }
+
+    private func rotatedSymbolIcon(name: String, size: CGFloat, rotation: CGFloat) -> NSImage? {
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: "Tonos") else { return nil }
+        let image = NSImage(size: NSSize(width: size, height: size))
+        image.lockFocus()
+        defer { image.unlockFocus() }
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return nil }
+        let symbolSize = size * 0.7
+        let inset = (size - symbolSize) / 2
+        let symbolRect = NSRect(x: inset, y: inset, width: symbolSize, height: symbolSize)
+        ctx.translateBy(x: size / 2, y: size / 2)
+        ctx.rotate(by: rotation)
+        ctx.translateBy(x: -size / 2, y: -size / 2)
+        symbol.draw(in: symbolRect, from: .zero, operation: .sourceOver, fraction: 1.0)
+        image.isTemplate = true
+        return image
     }
 
     @objc func showPopover(_ sender: Any?) {
