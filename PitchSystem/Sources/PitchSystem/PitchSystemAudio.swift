@@ -37,6 +37,7 @@ struct SongPreset: Identifiable, Codable, Hashable {
     var vocalRemovalMode: VocalRemovalMode
     var vocalMono: Float
     var vocalKaraoke: Float
+    var dualMonoOutput: Bool
 }
 
 /// Lock-protected parameters read from the real-time audio render thread.
@@ -45,6 +46,7 @@ final class AudioParameters: @unchecked Sendable {
     private var _volume: Float = 1.0
     private var _vocalMono: Float = 0.0
     private var _vocalKaraoke: Float = 0.0
+    private var _dualMonoOutput: Bool = false
 
     var volume: Float {
         lock.lock()
@@ -70,10 +72,22 @@ final class AudioParameters: @unchecked Sendable {
         return _vocalKaraoke
     }
 
+    var dualMonoOutput: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _dualMonoOutput
+    }
+
     func setVocalBlend(mono: Float, karaoke: Float) {
         lock.lock()
         _vocalMono = mono
         _vocalKaraoke = karaoke
+        lock.unlock()
+    }
+
+    func setDualMonoOutput(_ value: Bool) {
+        lock.lock()
+        _dualMonoOutput = value
         lock.unlock()
     }
 }
@@ -117,6 +131,9 @@ final class PitchSystemAudio: ObservableObject {
             audioParams.setVocalBlend(mono: vocalMono, karaoke: vocalKaraoke)
             updateVocalRemovalModeFromBlend()
         }
+    }
+    @Published var dualMonoOutput: Bool = false {
+        didSet { audioParams.setDualMonoOutput(dualMonoOutput) }
     }
     @Published var outputDevices: [OutputDevice] = []
     @Published var selectedOutputID: AudioDeviceID? = nil {
@@ -340,7 +357,8 @@ final class PitchSystemAudio: ObservableObject {
             volume: volume,
             vocalRemovalMode: vocalRemovalMode,
             vocalMono: vocalMono,
-            vocalKaraoke: vocalKaraoke
+            vocalKaraoke: vocalKaraoke,
+            dualMonoOutput: dualMonoOutput
         )
         if let index = presets.firstIndex(where: { $0.name == name }) {
             presets[index] = preset
@@ -358,6 +376,7 @@ final class PitchSystemAudio: ObservableObject {
         vocalRemovalMode = preset.vocalRemovalMode
         vocalMono = preset.vocalMono
         vocalKaraoke = preset.vocalKaraoke
+        dualMonoOutput = preset.dualMonoOutput
         selectedPresetID = preset.id
     }
 
@@ -481,6 +500,7 @@ final class PitchSystemAudio: ObservableObject {
             let mono = audioParams.vocalMono
             let karaoke = audioParams.vocalKaraoke
             let total = mono + karaoke
+            let dualMono = audioParams.dualMonoOutput
             let blendScale = total > 1.0 ? (1.0 / total) : 1.0
             let gain = audioParams.volume
             for i in 0..<Int(framesToCopy) {
@@ -490,16 +510,22 @@ final class PitchSystemAudio: ObservableObject {
 
                 // Blend a mono side signal and a karaoke (out-of-phase right) side signal.
                 // total > 1 is normalized so the left channel never exceeds the original side amplitude.
-                let leftSample = (mono + karaoke) * blendScale * side
-                let rightSample = (mono - karaoke) * blendScale * side
+                var leftSample = (mono + karaoke) * blendScale * side
+                var rightSample = (mono - karaoke) * blendScale * side
 
                 if total <= .leastNormalMagnitude {
-                    left[i] = l * gain
-                    right[i] = r * gain
-                } else {
-                    left[i] = leftSample * gain
-                    right[i] = rightSample * gain
+                    leftSample = l
+                    rightSample = r
                 }
+
+                // Dual mono forces both channels to the same vocal-removed signal,
+                // fixing left-leaning blends and mono-downmix cancellation.
+                if dualMono {
+                    rightSample = leftSample
+                }
+
+                left[i] = leftSample * gain
+                right[i] = rightSample * gain
             }
             TPCircularBufferConsume(&ring.buffer, copyBytes)
 

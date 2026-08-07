@@ -4,8 +4,25 @@ import CoreAudio
 
 struct MenuView: View {
     @ObservedObject var audio: PitchSystemAudio
+    @State private var showingPresets = false
 
     var body: some View {
+        ZStack {
+            mainPanel
+
+            if showingPresets {
+                presetsPanel
+                    .transition(.move(edge: .trailing))
+                    .zIndex(1)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showingPresets)
+        .frame(width: 360)
+    }
+
+    // MARK: - Main panel
+
+    private var mainPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerBar
 
@@ -68,8 +85,6 @@ struct MenuView: View {
                 .frame(width: 150)
             }
 
-            presetRow
-
             if !audio.statusText.isEmpty {
                 Text(audio.statusText)
                     .font(.caption)
@@ -80,7 +95,7 @@ struct MenuView: View {
             Spacer()
         }
         .padding()
-        .frame(width: 360)
+        .background(.ultraThickMaterial)
     }
 
     private var headerBar: some View {
@@ -88,6 +103,16 @@ struct MenuView: View {
             Text("Tonos")
                 .font(.headline)
             Spacer()
+
+            Button {
+                withAnimation { showingPresets.toggle() }
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .buttonStyle(.borderless)
+            .help("Song presets")
+
             Button {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.MenuBarSettings") {
                     NSWorkspace.shared.open(url)
@@ -131,6 +156,14 @@ struct MenuView: View {
                 .monospacedDigit()
                 .frame(width: 38, alignment: .trailing)
         }
+
+        settingRow(label: "Mono out") {
+            Toggle(isOn: $audio.dualMonoOutput) {
+                EmptyView()
+            }
+            .toggleStyle(.switch)
+            .labelsHidden()
+        }
     }
 
     @ViewBuilder
@@ -168,11 +201,28 @@ struct MenuView: View {
         }
     }
 
-    private var presetRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Song presets")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    // MARK: - Presets panel
+
+    private var presetsPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button {
+                    withAnimation { showingPresets = false }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .font(.system(size: 14))
+                }
+                .buttonStyle(.borderless)
+
+                Spacer()
+
+                Text("Presets")
+                    .font(.headline)
+                Spacer()
+            }
 
             HStack(spacing: 8) {
                 TextField("Preset name", text: $audio.newPresetName)
@@ -184,31 +234,46 @@ struct MenuView: View {
                 .disabled(audio.newPresetName.isEmpty)
             }
 
-            HStack(spacing: 8) {
-                Picker("", selection: $audio.selectedPresetID) {
-                    Text("None").tag(nil as UUID?)
-                    ForEach(audio.presets) { preset in
-                        Text(preset.name).tag(preset.id as UUID?)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
-                .onChange(of: audio.selectedPresetID) { _, newID in
-                    if let newID, let preset = audio.presets.first(where: { $0.id == newID }) {
-                        audio.loadPreset(preset)
-                    }
-                }
+            if audio.presets.isEmpty {
+                Text("No presets yet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(audio.presets) { preset in
+                            HStack {
+                                Button {
+                                    audio.loadPreset(preset)
+                                } label: {
+                                    Text(preset.name)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.plain)
 
-                if let selected = audio.presets.first(where: { $0.id == audio.selectedPresetID }) {
-                    Button {
-                        audio.deletePreset(selected)
-                    } label: {
-                        Image(systemName: "trash")
+                                Spacer()
+
+                                Button {
+                                    audio.deletePreset(preset)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.borderless)
+                            }
+                            .padding(.vertical, 6)
+                            .background(audio.selectedPresetID == preset.id ? Color.accentColor.opacity(0.15) : Color.clear)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
                     }
-                    .buttonStyle(.borderless)
                 }
             }
+
+            Spacer()
         }
+        .padding()
+        .background(.ultraThickMaterial)
     }
 
     @ViewBuilder
