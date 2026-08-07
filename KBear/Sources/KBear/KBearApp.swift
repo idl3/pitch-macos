@@ -44,7 +44,6 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             self?.shouldReopenPopoverAfterPermission = false
             self?.showPopover(nil)
         }
-        MenuBarVisibilityRepair.repairHiddenVisibilityDefaults(for: "codes.ernest.tonos")
         MenuBarVisibilityRepair.repairHiddenVisibilityDefaults(for: "codes.ernest.kbear")
         createStatusItem()
     }
@@ -55,7 +54,7 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
 
     func createStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.autosaveName = "codes.ernest.tonos"
+        item.autosaveName = "codes.ernest.kbear"
         item.behavior = .terminationOnRemoval
         if let button = item.button {
             button.image = statusBarIcon() ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "KBear")
@@ -64,7 +63,6 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             button.target = self
         }
         statusItem = item
-        MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.tonos")
         MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.kbear")
     }
 

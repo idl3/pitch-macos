@@ -1,41 +1,29 @@
-# pitch-macos
+# KBear
 
-Two SwiftUI menu-bar prototypes for macOS that demonstrate real-time audio pitch shifting:
+A menu-bar macOS app that transposes system audio in real time and removes vocals.
 
-- **PitchSystem** captures system-wide audio using `CoreAudio Process Tap`, routes it through `AVAudioEngine` + `AVAudioUnitTimePitch`, and plays it back to the selected output device. Transposes anything playing on your Mac without touching individual apps.
-- **PitchYouTube** downloads the audio track from a YouTube URL with `yt-dlp` and plays it through `AVAudioEngine` + `AVAudioUnitTimePitch` with pitch/volume controls.
-
-## Feasibility
-
-- **macOS 14.2+**: feasible. `CATapDescription` + `AudioHardwareCreateProcessTap` + a private tap-only aggregate device can capture system output, and `AVAudioUnitTimePitch` shifts pitch independently of tempo.
-- **iOS**: not feasible on stock iOS. System-wide audio capture/modification is blocked by the sandbox; `CATapDescription` is macOS-only.
+- Captures system-wide audio using `CoreAudio Process Tap`.
+- Routes it through `AVAudioEngine` + `AVAudioUnitTimePitch`.
+- Plays it back to the selected output device.
+- Removes vocals with blendable Mono/Karaoke side processing.
 
 ## Requirements
 
 - macOS 14.2+
 - Swift 5.9+ / Xcode 15+
-- `yt-dlp` installed (for PitchYouTube only). Common Homebrew paths are tried automatically.
-- For PitchSystem, the first launch will ask for **Screen & System Audio Recording** TCC permission.
+- First launch will ask for **Screen & System Audio Recording** TCC permission.
 
 ## Build
 
-Each app is a separate SwiftPM package.
-
 ```bash
-cd PitchSystem
-swift build
-
-cd ../PitchYouTube
+cd KBear
 swift build
 ```
 
 ## Run from source
 
 ```bash
-cd PitchSystem
-./scripts/run.sh
-
-cd ../PitchYouTube
+cd KBear
 ./scripts/run.sh
 ```
 
@@ -44,9 +32,17 @@ cd ../PitchYouTube
 ## Manual packaging
 
 ```bash
-cd PitchSystem
+cd KBear
 ./scripts/package_app.sh release
-# Produces PitchSystem.app in the package root.
+# Produces KBear.app in the package root.
+```
+
+## Distribution
+
+```bash
+cd KBear
+./scripts/create_dmg.sh
+# Produces KBear.dmg.
 ```
 
 ## Testing plan
@@ -58,14 +54,13 @@ cd PitchSystem
 
 ## Important caveats
 
-- `PitchSystem` creates a private aggregate device and temporarily mutes the original process output while the tap is active. Toggle the app off to restore normal audio.
+- `KBear` creates a private aggregate device and temporarily mutes the original process output while the tap is active. Toggle the app off to restore normal audio.
 - `AVAudioUnitTimePitch` is not the highest-quality pitch shifter but is free and good enough for casual use.
-- `PitchYouTube` uses `yt-dlp` to obtain audio streams. This is a **prototype** only: extracting audio from YouTube may violate YouTube\'s Terms of Service, the URLs expire, and the extraction logic breaks when YouTube changes signatures. Do not ship this in an App Store product.
-- No commercial redistribution is planned for either prototype.
+- This app uses system-wide audio capture and cannot be distributed through the Mac App Store. Use an Apple Developer ID to code-sign and notarize the DMG for direct distribution.
 
 ## Vendored code
 
-`PitchSystem` includes `TPCircularBuffer` by Michael Tyson (zlib-style licence) for a lock-free producer/consumer ring buffer between the Core Audio IOProc and `AVAudioSourceNode`.
+`KBear` includes `TPCircularBuffer` by Michael Tyson (zlib-style licence) for a lock-free producer/consumer ring buffer between the Core Audio IOProc and `AVAudioSourceNode`.
 
 ## License
 
