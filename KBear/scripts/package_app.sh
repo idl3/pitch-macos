@@ -40,7 +40,12 @@ if [[ -d "${ROOT_DIR}/Resources" ]]; then
 fi
 
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "${APP_BUNDLE}" >/dev/null 2>&1 || true
+    SIGN_ID="${CODESIGN_ID:--}"
+    ENTITLEMENTS=""
+    if [[ -f "${ROOT_DIR}/KBear.entitlements" ]]; then
+        ENTITLEMENTS="--entitlements ${ROOT_DIR}/KBear.entitlements"
+    fi
+    codesign --force --deep --sign "${SIGN_ID}" ${ENTITLEMENTS} "${APP_BUNDLE}" >/dev/null 2>&1 || true
 fi
 
 echo "${APP_BUNDLE}"
