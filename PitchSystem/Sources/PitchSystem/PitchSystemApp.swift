@@ -1,6 +1,20 @@
 import SwiftUI
 import AppKit
 
+final class TonosHostingController: NSHostingController<MenuView> {
+    weak var popover: NSPopover?
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let size = view.fittingSize
+        guard let popover = popover, size.height > 0 else { return }
+        let current = popover.contentSize
+        if abs(current.height - size.height) > 4 || abs(current.width - size.width) > 4 {
+            popover.contentSize = size
+        }
+    }
+}
+
 @MainActor
 final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var statusItem: NSStatusItem?
@@ -44,8 +58,9 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         if popover == nil {
             let p = NSPopover()
             p.behavior = .transient
-            p.contentSize = NSSize(width: 380, height: 520)
-            p.contentViewController = NSHostingController(rootView: MenuView(audio: audio))
+            let hosting = TonosHostingController(rootView: MenuView(audio: audio))
+            hosting.popover = p
+            p.contentViewController = hosting
             p.delegate = self
             popover = p
         }

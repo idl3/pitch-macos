@@ -18,6 +18,7 @@ struct MenuView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: showingPresets)
         .frame(width: 360)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Main panel
@@ -26,29 +27,43 @@ struct MenuView: View {
         VStack(alignment: .leading, spacing: 12) {
             headerBar
 
-            settingRow(label: "Enable pitch shift") {
-                Toggle(isOn: Binding(
-                    get: { audio.isEnabled },
-                    set: { audio.setEnabled($0) }
-                )) {
+            settingRow(label: "Change pitch") {
+                Toggle(isOn: $audio.pitchEnabled) {
                     EmptyView()
                 }
                 .toggleStyle(.switch)
                 .labelsHidden()
             }
 
-            settingRow(label: "Vocal removal") {
-                Picker("", selection: $audio.vocalRemovalMode) {
-                    ForEach(VocalRemovalMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 150)
+            if audio.pitchEnabled {
+                pitchControls
             }
 
-            vocalSliders
+            settingRow(label: "Remove vocals") {
+                Toggle(isOn: $audio.removeVocalsEnabled) {
+                    EmptyView()
+                }
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
 
+            if audio.removeVocalsEnabled {
+                vocalControls
+            }
+
+            if !audio.statusText.isEmpty {
+                Text(audio.statusText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding()
+        .background(.ultraThickMaterial)
+    }
+
+    private var pitchControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
             settingRow(label: "Mode") {
                 Picker("", selection: $audio.pitchControlMode) {
                     ForEach(PitchControlMode.allCases, id: \.self) { mode in
@@ -59,43 +74,82 @@ struct MenuView: View {
                 .frame(width: 150)
             }
 
-            pitchRow
+            if audio.pitchControlMode == .semitones {
+                HStack {
+                    Text("Pitch")
+                    Spacer()
+                    HStack(spacing: 8) {
+                        Button {
+                            audio.pitchSemitones = max(-12, audio.pitchSemitones - 1)
+                        } label: {
+                            Text("−").frame(width: 24)
+                        }
+                        Text("\(audio.pitchSemitones) st")
+                            .monospacedDigit()
+                            .frame(width: 50)
+                        Button {
+                            audio.pitchSemitones = min(12, audio.pitchSemitones + 1)
+                        } label: {
+                            Text("+").frame(width: 24)
+                        }
+                    }
+                }
+            } else {
+                settingRow(label: "Pitch") {
+                    HStack(spacing: 8) {
+                        Slider(value: $audio.pitchCents, in: -2400...2400, step: 100)
+                            .frame(width: 120)
+                        Text("\(Int(audio.pitchCents)) c")
+                            .monospacedDigit()
+                            .frame(width: 50, alignment: .trailing)
+                    }
+                }
+            }
+        }
+    }
 
-            settingRow(label: "Volume") {
-                HStack(spacing: 8) {
-                    Slider(value: $audio.volume, in: 0...1)
-                        .frame(width: 100)
-                    Text(String(format: "%d%%", Int(audio.volume * 100)))
+    private var vocalControls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            settingRow(label: "Mode") {
+                Picker("", selection: $audio.vocalRemovalMode) {
+                    ForEach([VocalRemovalMode.mono, .wide, .karaoke, .aggressive, .custom], id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
+
+            if audio.vocalRemovalMode == .custom {
+                HStack {
+                    Text("Mono")
+                    Spacer()
+                    Slider(value: $audio.vocalMono, in: 0...1)
+                        .frame(width: 150)
+                    Text(String(format: "%d%%", Int(audio.vocalMono * 100)))
+                        .monospacedDigit()
+                        .frame(width: 38, alignment: .trailing)
+                }
+
+                HStack {
+                    Text("Karaoke")
+                    Spacer()
+                    Slider(value: $audio.vocalKaraoke, in: 0...1)
+                        .frame(width: 150)
+                    Text(String(format: "%d%%", Int(audio.vocalKaraoke * 100)))
                         .monospacedDigit()
                         .frame(width: 38, alignment: .trailing)
                 }
             }
 
-            settingRow(label: "Play through") {
-                Picker(selection: $audio.selectedOutputID) {
-                    Text("System default").tag(nil as AudioDeviceID?)
-                    ForEach(audio.outputDevices) { device in
-                        Text(device.name).tag(device.audioID as AudioDeviceID?)
-                    }
-                } label: {
-                    Label("Play through", systemImage: "speaker.wave.2")
-                        .labelStyle(.iconOnly)
+            settingRow(label: "Mono out") {
+                Toggle(isOn: $audio.dualMonoOutput) {
+                    EmptyView()
                 }
-                .pickerStyle(.menu)
-                .frame(width: 150)
+                .toggleStyle(.switch)
+                .labelsHidden()
             }
-
-            if !audio.statusText.isEmpty {
-                Text(audio.statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Spacer()
         }
-        .padding()
-        .background(.ultraThickMaterial)
     }
 
     private var headerBar: some View {
@@ -103,6 +157,8 @@ struct MenuView: View {
             Text("Tonos")
                 .font(.headline)
             Spacer()
+
+            outputMenu
 
             Button {
                 withAnimation { showingPresets.toggle() }
@@ -135,69 +191,35 @@ struct MenuView: View {
         }
     }
 
-    @ViewBuilder
-    private var vocalSliders: some View {
-        HStack {
-            Text("Mono")
-            Spacer()
-            Slider(value: $audio.vocalMono, in: 0...1)
-                .frame(width: 150)
-            Text(String(format: "%d%%", Int(audio.vocalMono * 100)))
-                .monospacedDigit()
-                .frame(width: 38, alignment: .trailing)
-        }
-
-        HStack {
-            Text("Karaoke")
-            Spacer()
-            Slider(value: $audio.vocalKaraoke, in: 0...1)
-                .frame(width: 150)
-            Text(String(format: "%d%%", Int(audio.vocalKaraoke * 100)))
-                .monospacedDigit()
-                .frame(width: 38, alignment: .trailing)
-        }
-
-        settingRow(label: "Mono out") {
-            Toggle(isOn: $audio.dualMonoOutput) {
-                EmptyView()
+    private var outputMenu: some View {
+        Menu {
+            Button {
+                audio.selectedOutputID = nil
+            } label: {
+                outputRowLabel(name: "System default", selected: audio.selectedOutputID == nil)
             }
-            .toggleStyle(.switch)
-            .labelsHidden()
+            Divider()
+            ForEach(audio.outputDevices) { device in
+                Button {
+                    audio.selectedOutputID = device.audioID
+                } label: {
+                    outputRowLabel(name: device.name, selected: audio.selectedOutputID == device.audioID)
+                }
+            }
+        } label: {
+            Image(systemName: "airplayaudio")
+                .font(.system(size: 14, weight: .medium))
         }
+        .buttonStyle(.borderless)
+        .help("Play through")
     }
 
-    @ViewBuilder
-    private var pitchRow: some View {
-        if audio.pitchControlMode == .semitones {
-            HStack {
-                Text("Pitch")
-                Spacer()
-                HStack(spacing: 8) {
-                    Button {
-                        audio.pitchSemitones = max(-12, audio.pitchSemitones - 1)
-                    } label: {
-                        Text("−").frame(width: 24)
-                    }
-                    Text("\(audio.pitchSemitones) st")
-                        .monospacedDigit()
-                        .frame(width: 50)
-                    Button {
-                        audio.pitchSemitones = min(12, audio.pitchSemitones + 1)
-                    } label: {
-                        Text("+").frame(width: 24)
-                    }
-                }
+    private func outputRowLabel(name: String, selected: Bool) -> some View {
+        HStack {
+            if selected {
+                Image(systemName: "checkmark")
             }
-        } else {
-            settingRow(label: "Pitch") {
-                HStack(spacing: 8) {
-                    Slider(value: $audio.pitchCents, in: -2400...2400, step: 100)
-                        .frame(width: 120)
-                    Text("\(Int(audio.pitchCents)) c")
-                        .monospacedDigit()
-                        .frame(width: 50, alignment: .trailing)
-                }
-            }
+            Text(name)
         }
     }
 

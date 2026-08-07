@@ -30,9 +30,11 @@ enum VocalRemovalMode: String, CaseIterable, Codable {
 struct SongPreset: Identifiable, Codable, Hashable {
     let id: UUID
     var name: String
+    var pitchEnabled: Bool
     var pitchSemitones: Int
     var pitchCents: Float
     var pitchControlMode: PitchControlMode
+    var removeVocalsEnabled: Bool
     var volume: Float
     var vocalRemovalMode: VocalRemovalMode
     var vocalMono: Float
@@ -95,9 +97,11 @@ final class AudioParameters: @unchecked Sendable {
 @MainActor
 final class PitchSystemAudio: ObservableObject {
     static let shared = PitchSystemAudio()
-    @Published var isEnabled = false
+    @Published var pitchEnabled: Bool = false {
+        didSet { updatePitch(); updateEngine() }
+    }
     @Published var pitchCents: Float = 0 {
-        didSet { timePitch?.pitch = pitchCents }
+        didSet { updatePitch() }
     }
     @Published var pitchSemitones: Int = 0 {
         didSet {
@@ -108,6 +112,16 @@ final class PitchSystemAudio: ObservableObject {
     }
     @Published var pitchControlMode: PitchControlMode = .semitones {
         didSet { syncPitchForMode() }
+    }
+    @Published var removeVocalsEnabled: Bool = false {
+        didSet {
+            if removeVocalsEnabled {
+                if vocalRemovalMode == .off { vocalRemovalMode = .mono }
+            } else {
+                vocalRemovalMode = .off
+            }
+            updateEngine()
+        }
     }
     @Published var volume: Float = 1.0 {
         didSet { audioParams.setVolume(volume) }
@@ -132,7 +146,7 @@ final class PitchSystemAudio: ObservableObject {
             updateVocalRemovalModeFromBlend()
         }
     }
-    @Published var dualMonoOutput: Bool = false {
+    @Published var dualMonoOutput: Bool = true {
         didSet { audioParams.setDualMonoOutput(dualMonoOutput) }
     }
     @Published var outputDevices: [OutputDevice] = []
@@ -158,6 +172,7 @@ final class PitchSystemAudio: ObservableObject {
     private var isUpdatingVocalBlend = false
     private var deviceListener: AudioObjectPropertyListenerBlock?
     private let presetsKey = "codes.ernest.tonos.presets"
+    private var isEngineRunning = false
 
     init() {
         loadPresets()
@@ -165,24 +180,33 @@ final class PitchSystemAudio: ObservableObject {
         startListeningForDeviceChanges()
     }
 
-    func setEnabled(_ enabled: Bool) {
-        guard enabled != isEnabled else { return }
-        if enabled {
+    private func updatePitch() {
+        timePitch?.pitch = pitchEnabled ? pitchCents : 0
+    }
+
+    private func updateEngine() {
+        let shouldRun = pitchEnabled || removeVocalsEnabled
+        guard shouldRun != isEngineRunning else { return }
+        if shouldRun {
             do {
                 try setup()
                 try engine?.start()
-                isEnabled = true
+                isEngineRunning = true
                 statusText = ""
             } catch {
                 cleanup()
+                isEngineRunning = false
                 statusText = "Error: \(error.localizedDescription)"
-                isEnabled = false
             }
         } else {
             cleanup()
-            isEnabled = false
+            isEngineRunning = false
             statusText = ""
         }
+    }
+
+    func restartEngineIfNeeded() {
+        restartEngine()
     }
 
     func refreshOutputDevices() {
@@ -243,10 +267,17 @@ final class PitchSystemAudio: ObservableObject {
             statusText = "Could not set output (\(err))"
             return
         }
-        if isEnabled {
-            setEnabled(false)
-            setEnabled(true)
+        if isEngineRunning {
+            restartEngine()
         }
+    }
+
+    private func restartEngine() {
+        if isEngineRunning {
+            cleanup()
+            isEngineRunning = false
+        }
+        updateEngine()
     }
 
     private func startListeningForDeviceChanges() {
@@ -351,9 +382,11 @@ final class PitchSystemAudio: ObservableObject {
         let preset = SongPreset(
             id: UUID(),
             name: name,
+            pitchEnabled: pitchEnabled,
             pitchSemitones: pitchSemitones,
             pitchCents: pitchCents,
             pitchControlMode: pitchControlMode,
+            removeVocalsEnabled: removeVocalsEnabled,
             volume: volume,
             vocalRemovalMode: vocalRemovalMode,
             vocalMono: vocalMono,
@@ -369,9 +402,11 @@ final class PitchSystemAudio: ObservableObject {
     }
 
     func loadPreset(_ preset: SongPreset) {
+        pitchEnabled = preset.pitchEnabled
         pitchControlMode = preset.pitchControlMode
         pitchCents = preset.pitchCents
         pitchSemitones = preset.pitchSemitones
+        removeVocalsEnabled = preset.removeVocalsEnabled
         volume = preset.volume
         vocalRemovalMode = preset.vocalRemovalMode
         vocalMono = preset.vocalMono
