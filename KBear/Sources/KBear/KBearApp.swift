@@ -45,6 +45,7 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             self?.showPopover(nil)
         }
         MenuBarVisibilityRepair.repairHiddenVisibilityDefaults(for: "codes.ernest.tonos")
+        MenuBarVisibilityRepair.repairHiddenVisibilityDefaults(for: "codes.ernest.kbear")
         createStatusItem()
     }
 
@@ -64,6 +65,7 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         }
         statusItem = item
         MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.tonos")
+        MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.kbear")
     }
 
     private func statusBarIcon() -> NSImage? {
