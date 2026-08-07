@@ -18,8 +18,40 @@ enum PitchControlMode: String, CaseIterable {
     case cents = "Cents"
 }
 
+/// Lock-protected parameters read from the real-time audio render thread.
+final class AudioParameters: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _volume: Float = 1.0
+    private var _vocalRemovalEnabled: Bool = false
+
+    var volume: Float {
+        lock.lock()
+        defer { lock.unlock() }
+        return _volume
+    }
+
+    func setVolume(_ value: Float) {
+        lock.lock()
+        _volume = value
+        lock.unlock()
+    }
+
+    var vocalRemovalEnabled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return _vocalRemovalEnabled
+    }
+
+    func setVocalRemovalEnabled(_ value: Bool) {
+        lock.lock()
+        _vocalRemovalEnabled = value
+        lock.unlock()
+    }
+}
+
 @MainActor
 final class PitchSystemAudio: ObservableObject {
+    static let shared = PitchSystemAudio()
     @Published var isEnabled = false
     @Published var pitchCents: Float = 0 {
         didSet { timePitch?.pitch = pitchCents }
@@ -35,7 +67,10 @@ final class PitchSystemAudio: ObservableObject {
         didSet { syncPitchForMode() }
     }
     @Published var volume: Float = 1.0 {
-        didSet { engine?.mainMixerNode.volume = volume }
+        didSet { audioParams.setVolume(volume) }
+    }
+    @Published var vocalRemovalEnabled: Bool = false {
+        didSet { audioParams.setVocalRemovalEnabled(vocalRemovalEnabled) }
     }
     @Published var outputDevices: [OutputDevice] = []
     @Published var selectedOutputID: AudioDeviceID? = nil {
@@ -53,6 +88,7 @@ final class PitchSystemAudio: ObservableObject {
     private var asbd = AudioStreamBasicDescription()
     private let ioQueue = DispatchQueue(label: "codes.ernest.tonos.io", qos: .userInteractive)
     private let ringCapacity = UInt32(1 << 19)
+    private let audioParams = AudioParameters()
     private var deviceListener: AudioObjectPropertyListenerBlock?
 
     init() {
@@ -203,7 +239,7 @@ final class PitchSystemAudio: ObservableObject {
         let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: excludeIDs)
         let tapUUID = UUID()
         tapDescription.uuid = tapUUID
-        tapDescription.muteBehavior = CATapMuteBehavior(rawValue: 1) ?? tapDescription.muteBehavior
+        tapDescription.muteBehavior = .mutedWhenTapped
         tapDescription.isPrivate = true
         tapDescription.name = "Tonos Tap"
 
@@ -270,7 +306,7 @@ final class PitchSystemAudio: ObservableObject {
 
         let bytesPerFrame = channels * 4
 
-        sourceNode = AVAudioSourceNode(format: format) { [ring] silence, time, frameCount, outputData -> OSStatus in
+        sourceNode = AVAudioSourceNode(format: format) { [ring, audioParams] silence, time, frameCount, outputData -> OSStatus in
             let list = UnsafeMutableAudioBufferListPointer(outputData)
             guard list.count >= Int(channels) else { return noErr }
             let left = list[0].mData?.assumingMemoryBound(to: Float.self)
@@ -289,9 +325,18 @@ final class PitchSystemAudio: ObservableObject {
             let framesToCopy = min(frameCount, availableFrames)
             let copyBytes = framesToCopy * bytesPerFrame
             let src = tail.assumingMemoryBound(to: Float.self)
+            let removeVocals = audioParams.vocalRemovalEnabled
+            let gain = audioParams.volume
             for i in 0..<Int(framesToCopy) {
-                left[i] = src[i * 2]
-                right[i] = src[i * 2 + 1]
+                var l = src[i * 2]
+                var r = src[i * 2 + 1]
+                if removeVocals {
+                    let diff = (l - r) * 0.5
+                    l = diff
+                    r = -diff
+                }
+                left[i] = l * gain
+                right[i] = r * gain
             }
             TPCircularBufferConsume(&ring.buffer, copyBytes)
 
@@ -308,7 +353,6 @@ final class PitchSystemAudio: ObservableObject {
         engine.attach(timePitch!)
         engine.connect(sourceNode!, to: timePitch!, format: format)
         engine.connect(timePitch!, to: engine.mainMixerNode, format: format)
-        engine.mainMixerNode.volume = volume
 
         // 5. Feed the ring buffer from the aggregate IOProc.
         let ioBlock: AudioDeviceIOBlock = { [ring] _, inInputData, _, _, _ in

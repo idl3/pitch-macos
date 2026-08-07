@@ -13,6 +13,9 @@ struct MenuView: View {
             ))
             .toggleStyle(.switch)
 
+            Toggle("Remove vocals", isOn: $audio.vocalRemovalEnabled)
+                .toggleStyle(.switch)
+
             Picker("Mode", selection: $audio.pitchControlMode) {
                 ForEach(PitchControlMode.allCases, id: \.self) { mode in
                     Text(mode.rawValue).tag(mode)
@@ -50,8 +53,8 @@ struct MenuView: View {
 
             HStack {
                 Text("Volume")
-                Slider(value: $audio.volume, in: 0...2)
-                Text(String(format: "%.1fx", audio.volume))
+                Slider(value: $audio.volume, in: 0...1)
+                Text(String(format: "%d%%", Int(audio.volume * 100)))
                     .frame(width: 40, alignment: .trailing)
             }
 
@@ -68,6 +71,12 @@ struct MenuView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Button("Open Menu Bar Settings") {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.MenuBarSettings") {
+                    NSWorkspace.shared.open(url)
+                }
             }
 
             Button("Quit") {

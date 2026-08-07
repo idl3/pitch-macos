@@ -2,7 +2,8 @@ import Foundation
 
 enum MenuBarVisibilityRepair {
     private static let suiteName = "com.apple.controlcenter"
-    private static let visibilityPrefix = "NSStatusItem VisibleCC "
+    private static let visiblePrefix = "NSStatusItem Visible "
+    private static let visibleCCPrefix = "NSStatusItem VisibleCC "
     private static let didRepairKey = "codes.ernest.tonos.hasRepairedMenuBarVisibility"
 
     static func repairHiddenVisibilityDefaults() {
@@ -11,7 +12,7 @@ enum MenuBarVisibilityRepair {
 
         let keysToRemove = defaults.dictionaryRepresentation().keys
             .filter { key in
-                guard key.hasPrefix(visibilityPrefix) else { return false }
+                guard key.hasPrefix(visiblePrefix) || key.hasPrefix(visibleCCPrefix) else { return false }
                 let value = defaults.object(forKey: key)
                 return isHiddenValue(value)
             }
@@ -26,11 +27,15 @@ enum MenuBarVisibilityRepair {
 
     static func clearVisibilityDefault(for autosaveName: String) {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
-        let key = visibilityPrefix + autosaveName
-        if isHiddenValue(defaults.object(forKey: key)) {
-            defaults.removeObject(forKey: key)
-            defaults.synchronize()
+        let visibleKey = visiblePrefix + autosaveName
+        let visibleCCKey = visibleCCPrefix + autosaveName
+        if isHiddenValue(defaults.object(forKey: visibleKey)) {
+            defaults.set(true, forKey: visibleKey)
         }
+        if isHiddenValue(defaults.object(forKey: visibleCCKey)) {
+            defaults.set(true, forKey: visibleCCKey)
+        }
+        defaults.synchronize()
     }
 
     private static func isHiddenValue(_ value: Any?) -> Bool {
