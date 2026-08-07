@@ -3,7 +3,7 @@ import AppKit
 import CoreAudio
 
 struct MenuView: View {
-    @ObservedObject var audio: PitchSystemAudio
+    @ObservedObject var audio: KBearAudio
     @State private var showingPresets = false
 
     var body: some View {
@@ -152,7 +152,7 @@ struct MenuView: View {
 
     private var headerBar: some View {
         HStack {
-            Text("Tonos")
+            Text("KBear")
                 .font(.headline)
             Spacer()
 
@@ -185,7 +185,7 @@ struct MenuView: View {
                     .font(.system(size: 14, weight: .medium))
             }
             .buttonStyle(.borderless)
-            .help("Quit Tonos")
+            .help("Quit KBear")
         }
     }
 

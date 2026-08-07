@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Tonos</string>
+    <string>KBear</string>
     <key>CFBundleDisplayName</key>
-    <string>Tonos</string>
+    <string>KBear</string>
     <key>CFBundleIdentifier</key>
     <string>codes.ernest.tonos</string>
     <key>CFBundleExecutable</key>
-    <string>Tonos</string>
+    <string>KBear</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -27,6 +27,6 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Tonos captures system audio so it can transpose pitch in real time.</string>
+    <string>KBear captures system audio so it can transpose pitch in real time.</string>
 </dict>
 </plist>

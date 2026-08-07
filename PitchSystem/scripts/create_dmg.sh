@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Tonos"
+APP_NAME="KBear"
 
 cd "${ROOT_DIR}"
 

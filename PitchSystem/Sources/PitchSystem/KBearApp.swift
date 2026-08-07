@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import CoreGraphics
 
-final class TonosHostingController: NSHostingController<MenuView> {
+final class KBearHostingController: NSHostingController<MenuView> {
     weak var popover: NSPopover?
 
     override func viewDidLayout() {
@@ -17,15 +17,24 @@ final class TonosHostingController: NSHostingController<MenuView> {
 }
 
 @MainActor
-final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
     var fallbackWindow: NSWindow?
     var visibilityTimer: Timer?
     var popoverIsOpen = false
-    var audio: PitchSystemAudio { PitchSystemAudio.shared }
+    var shouldReopenPopoverAfterPermission = false
+    var audio: KBearAudio { KBearAudio.shared }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        audio.permissionPromptHandler = { [weak self] in
+            self?.shouldReopenPopoverAfterPermission = self?.popoverIsOpen ?? false
+        }
+        audio.permissionGrantedHandler = { [weak self] in
+            guard self?.shouldReopenPopoverAfterPermission == true else { return }
+            self?.shouldReopenPopoverAfterPermission = false
+            self?.showPopover(nil)
+        }
         requestAudioPermissionIfNeeded()
         MenuBarVisibilityRepair.repairHiddenVisibilityDefaults()
         createFallbackWindow()
@@ -54,9 +63,9 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         item.autosaveName = "codes.ernest.tonos"
         item.behavior = .terminationOnRemoval
         if let button = item.button {
-            button.image = statusBarIcon() ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Tonos")
-            button.toolTip = "Tonos"
-            button.action = #selector(showPopover(_:))
+            button.image = statusBarIcon() ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "KBear")
+            button.toolTip = "KBear"
+            button.action = #selector(togglePopover(_:))
             button.target = self
         }
         statusItem = item
@@ -70,11 +79,11 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             return image
         }
         return rotatedSymbolIcon(name: "mic.fill", size: 22, rotation: .pi / 4)
-            ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Tonos")
+            ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "KBear")
     }
 
     private func rotatedSymbolIcon(name: String, size: CGFloat, rotation: CGFloat) -> NSImage? {
-        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: "Tonos") else { return nil }
+        guard let symbol = NSImage(systemSymbolName: name, accessibilityDescription: "KBear") else { return nil }
         let image = NSImage(size: NSSize(width: size, height: size))
         image.lockFocus()
         defer { image.unlockFocus() }
@@ -90,17 +99,27 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         return image
     }
 
+    @objc func togglePopover(_ sender: Any?) {
+        guard statusItem?.button != nil else { return }
+        if popover?.isShown == true {
+            closePopover()
+            return
+        }
+        showPopover(sender)
+    }
+
     @objc func showPopover(_ sender: Any?) {
         guard let button = statusItem?.button else { return }
         if popover == nil {
             let p = NSPopover()
             p.behavior = .transient
-            let hosting = TonosHostingController(rootView: MenuView(audio: audio))
+            let hosting = KBearHostingController(rootView: MenuView(audio: audio))
             hosting.popover = p
             p.contentViewController = hosting
             p.delegate = self
             popover = p
         }
+        shouldReopenPopoverAfterPermission = false
         popoverIsOpen = true
         syncFallbackWindowVisibility()
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -122,19 +141,29 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
     func createFallbackWindow() {
         guard fallbackWindow == nil else { return }
         let hostingController = NSHostingController(rootView: MenuView(audio: audio))
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "Tonos"
-        window.setContentSize(NSSize(width: 360, height: 520))
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.isReleasedWhenClosed = false
-        fallbackWindow = window
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 520),
+            styleMask: [.titled, .closable, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "KBear"
+        panel.isFloatingPanel = true
+        panel.becomesKeyOnlyIfNeeded = true
+        panel.isReleasedWhenClosed = false
+        panel.isExcludedFromWindowsMenu = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .transient]
+        panel.contentViewController = hostingController
+        fallbackWindow = panel
     }
 
     func scheduleVisibilityCheck() {
-        // Wait briefly for the status item to materialize before deciding to show the fallback window.
-        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+        // Give the status item a moment to appear; show the fallback panel once if it doesn't.
+        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.syncFallbackWindowVisibility()
+                self?.visibilityTimer?.invalidate()
+                self?.visibilityTimer = nil
             }
         }
     }
@@ -145,15 +174,18 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             return
         }
         guard let item = statusItem, item.isOnScreen else {
-            showFallbackWindow()
+            showFallbackWindowIfNeeded()
             return
         }
         fallbackWindow?.orderOut(nil)
     }
 
-    func showFallbackWindow() {
-        NSApp.activate(ignoringOtherApps: true)
-        fallbackWindow?.makeKeyAndOrderFront(nil)
+    private var hasShownFallback = false
+
+    func showFallbackWindowIfNeeded() {
+        guard !hasShownFallback, fallbackWindow?.isVisible != true else { return }
+        hasShownFallback = true
+        fallbackWindow?.orderFrontRegardless()
     }
 }
 
@@ -168,12 +200,12 @@ extension NSStatusItem {
 }
 
 @main
-struct TonosApp: App {
-    @NSApplicationDelegateAdaptor(TonosAppDelegate.self) var appDelegate
+struct KBearApp: App {
+    @NSApplicationDelegateAdaptor(KBearAppDelegate.self) var appDelegate
 
     var body: some Scene {
         Settings {
-            MenuView(audio: PitchSystemAudio.shared)
+            MenuView(audio: KBearAudio.shared)
                 .frame(width: 320)
         }
     }

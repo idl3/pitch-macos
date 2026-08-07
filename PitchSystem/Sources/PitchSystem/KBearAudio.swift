@@ -95,8 +95,8 @@ final class AudioParameters: @unchecked Sendable {
 }
 
 @MainActor
-final class PitchSystemAudio: ObservableObject {
-    static let shared = PitchSystemAudio()
+final class KBearAudio: ObservableObject {
+    static let shared = KBearAudio()
     @Published var pitchEnabled: Bool = false {
         didSet { updatePitch(); updateEngine() }
     }
@@ -158,6 +158,9 @@ final class PitchSystemAudio: ObservableObject {
     @Published var selectedPresetID: UUID? = nil
     @Published var newPresetName: String = ""
 
+    var permissionPromptHandler: (() -> Void)?
+    var permissionGrantedHandler: (() -> Void)?
+
     private var engine: AVAudioEngine?
     private var timePitch: AVAudioUnitTimePitch?
     private var sourceNode: AVAudioSourceNode?
@@ -166,13 +169,15 @@ final class PitchSystemAudio: ObservableObject {
     private var aggregateID: AudioObjectID = 0
     private var ioProcID: AudioDeviceIOProcID?
     private var asbd = AudioStreamBasicDescription()
-    private let ioQueue = DispatchQueue(label: "codes.ernest.tonos.io", qos: .userInteractive)
+    private let ioQueue = DispatchQueue(label: "codes.ernest.kbear.io", qos: .userInteractive)
     private let ringCapacity = UInt32(1 << 19)
     private let audioParams = AudioParameters()
     private var isUpdatingVocalBlend = false
     private var deviceListener: AudioObjectPropertyListenerBlock?
-    private let presetsKey = "codes.ernest.tonos.presets"
+    private let presetsKey = "codes.ernest.kbear.presets"
     private var isEngineRunning = false
+    private var permissionCheckTimer: Timer?
+    private var permissionPollAttempts = 0
 
     init() {
         loadPresets()
@@ -188,6 +193,10 @@ final class PitchSystemAudio: ObservableObject {
         let shouldRun = pitchEnabled || removeVocalsEnabled
         guard shouldRun != isEngineRunning else { return }
         if shouldRun {
+            guard requestAudioPermissionIfNeeded() else {
+                statusText = "Allow Screen & System Audio Recording to use KBear"
+                return
+            }
             do {
                 try setup()
                 try engine?.start()
@@ -202,6 +211,49 @@ final class PitchSystemAudio: ObservableObject {
             cleanup()
             isEngineRunning = false
             statusText = ""
+        }
+    }
+
+    private func requestAudioPermissionIfNeeded() -> Bool {
+        if #available(macOS 11.0, *) {
+            if CGPreflightScreenCaptureAccess() { return true }
+            guard permissionCheckTimer == nil else { return false }
+            permissionPromptHandler?()
+            CGRequestScreenCaptureAccess()
+            startPermissionPoll()
+            return false
+        }
+        return true
+    }
+
+    private func startPermissionPoll() {
+        permissionCheckTimer?.invalidate()
+        permissionPollAttempts = 0
+        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.checkPermissionPoll()
+            }
+        }
+    }
+
+    private func checkPermissionPoll() {
+        if #available(macOS 11.0, *) {
+            if CGPreflightScreenCaptureAccess() {
+                permissionCheckTimer?.invalidate()
+                permissionCheckTimer = nil
+                permissionPollAttempts = 0
+                statusText = ""
+                permissionGrantedHandler?()
+                updateEngine()
+                return
+            }
+        }
+        permissionPollAttempts += 1
+        if permissionPollAttempts >= 60 {
+            permissionCheckTimer?.invalidate()
+            permissionCheckTimer = nil
+            permissionPollAttempts = 0
+            statusText = "Permission not granted. Enable in System Settings → Privacy & Security."
         }
     }
 
@@ -439,7 +491,7 @@ final class PitchSystemAudio: ObservableObject {
 
     private func setup() throws {
         guard #available(macOS 14.2, *) else {
-            throw NSError(domain: "PitchSystem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Requires macOS 14.2+"])
+            throw NSError(domain: "KBear", code: -1, userInfo: [NSLocalizedDescriptionKey: "Requires macOS 14.2+"])
         }
 
         // 1. Tap everything except this process to avoid feedback.
@@ -450,7 +502,7 @@ final class PitchSystemAudio: ObservableObject {
         tapDescription.uuid = tapUUID
         tapDescription.muteBehavior = .mutedWhenTapped
         tapDescription.isPrivate = true
-        tapDescription.name = "Tonos Tap"
+        tapDescription.name = "KBear Tap"
 
         var newTapID: AudioObjectID = 0
         let tapStatus = AudioHardwareCreateProcessTap(tapDescription, &newTapID)
@@ -468,13 +520,13 @@ final class PitchSystemAudio: ObservableObject {
         var formatSize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
         let formatStatus = AudioObjectGetPropertyData(tapID, &formatAddress, 0, nil, &formatSize, &asbd)
         guard formatStatus == noErr, asbd.mSampleRate > 0, asbd.mChannelsPerFrame > 0 else {
-            throw NSError(domain: "PitchSystem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not read tap format"])
+            throw NSError(domain: "KBear", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not read tap format"])
         }
 
         // 3. Tap-only aggregate device (HFP / sample-rate-change safe).
         let aggregateDesc: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Tonos Aggregate",
-            kAudioAggregateDeviceUIDKey: "codes.ernest.tonos.tap.\(tapUUID.uuidString)",
+            kAudioAggregateDeviceNameKey: "KBear Aggregate",
+            kAudioAggregateDeviceUIDKey: "codes.ernest.kbear.tap.\(tapUUID.uuidString)",
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: false,
             kAudioAggregateDeviceTapListKey: [
@@ -494,13 +546,13 @@ final class PitchSystemAudio: ObservableObject {
         // 4. Build AVAudioEngine: source node -> time pitch -> output.
         engine = AVAudioEngine()
         guard let engine else {
-            throw NSError(domain: "PitchSystem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create engine"])
+            throw NSError(domain: "KBear", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create engine"])
         }
 
         let sampleRate = asbd.mSampleRate
         let channels = asbd.mChannelsPerFrame
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: channels, interleaved: false) else {
-            throw NSError(domain: "PitchSystem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create audio format"])
+            throw NSError(domain: "KBear", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not create audio format"])
         }
 
         timePitch = AVAudioUnitTimePitch()
@@ -510,7 +562,7 @@ final class PitchSystemAudio: ObservableObject {
 
         ringBuffer = RingBuffer(capacity: ringCapacity)
         guard let ring = ringBuffer else {
-            throw NSError(domain: "PitchSystem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not allocate ring buffer"])
+            throw NSError(domain: "KBear", code: -1, userInfo: [NSLocalizedDescriptionKey: "Could not allocate ring buffer"])
         }
 
         let bytesPerFrame = channels * 4

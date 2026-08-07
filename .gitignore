@@ -2,7 +2,7 @@
 .build
 
 # Generated app bundles and disk images
-PitchSystem/Tonos.app
+PitchSystem/*.app
 PitchSystem/*.dmg
 PitchSystem/.dmg-staging
 PitchYouTube/PitchYouTube.app

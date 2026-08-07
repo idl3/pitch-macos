@@ -29,10 +29,10 @@ enum MenuBarVisibilityRepair {
         guard let defaults = UserDefaults(suiteName: suiteName) else { return }
         let visibleKey = visiblePrefix + autosaveName
         let visibleCCKey = visibleCCPrefix + autosaveName
-        if isHiddenValue(defaults.object(forKey: visibleKey)) {
+        if defaults.object(forKey: visibleKey) == nil || isHiddenValue(defaults.object(forKey: visibleKey)) {
             defaults.set(true, forKey: visibleKey)
         }
-        if isHiddenValue(defaults.object(forKey: visibleCCKey)) {
+        if defaults.object(forKey: visibleCCKey) == nil || isHiddenValue(defaults.object(forKey: visibleCCKey)) {
             defaults.set(true, forKey: visibleCCKey)
         }
         defaults.synchronize()

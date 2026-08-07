@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "Tonos",
+    name: "KBear",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Tonos", targets: ["Tonos"])
+        .executable(name: "KBear", targets: ["KBear"])
     ],
     dependencies: [],
     targets: [
@@ -16,7 +16,7 @@ let package = Package(
             cSettings: [.headerSearchPath("include")]
         ),
         .executableTarget(
-            name: "Tonos",
+            name: "KBear",
             dependencies: ["TPCircularBuffer"],
             path: "Sources/PitchSystem",
             swiftSettings: [
