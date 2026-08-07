@@ -64,6 +64,11 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
     }
 
     private func statusBarIcon() -> NSImage? {
+        if let image = Bundle.main.image(forResource: "menu_bar_icon") {
+            image.isTemplate = true
+            image.size = NSSize(width: 14, height: 14)
+            return image
+        }
         return rotatedSymbolIcon(name: "mic.fill", size: 22, rotation: .pi / 4)
             ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "Tonos")
     }
