@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreGraphics
 
 final class TonosHostingController: NSHostingController<MenuView> {
     weak var popover: NSPopover?
@@ -25,10 +26,19 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
     var audio: PitchSystemAudio { PitchSystemAudio.shared }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        requestAudioPermissionIfNeeded()
         MenuBarVisibilityRepair.repairHiddenVisibilityDefaults()
         createFallbackWindow()
         createStatusItem()
         scheduleVisibilityCheck()
+    }
+
+    private func requestAudioPermissionIfNeeded() {
+        if #available(macOS 11.0, *) {
+            if !CGPreflightScreenCaptureAccess() {
+                CGRequestScreenCaptureAccess()
+            }
+        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {

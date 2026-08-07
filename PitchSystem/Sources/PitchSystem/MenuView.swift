@@ -110,15 +110,13 @@ struct MenuView: View {
 
     private var vocalControls: some View {
         VStack(alignment: .leading, spacing: 12) {
-            settingRow(label: "Mode") {
-                Picker("", selection: $audio.vocalRemovalMode) {
-                    ForEach([VocalRemovalMode.mono, .wide, .karaoke, .aggressive, .custom], id: \.self) { mode in
-                        Text(mode.rawValue).tag(mode)
-                    }
+            Picker("", selection: $audio.vocalRemovalMode) {
+                ForEach([VocalRemovalMode.mono, .wide, .karaoke, .aggressive, .custom], id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 220)
             }
+            .pickerStyle(.segmented)
+            .frame(maxWidth: .infinity)
 
             if audio.vocalRemovalMode == .custom {
                 HStack {
