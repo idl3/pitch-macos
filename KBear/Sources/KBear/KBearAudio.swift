@@ -705,7 +705,7 @@ final class KBearAudio: ObservableObject {
         engine.prepare()
     }
 
-    private func cleanup() {
+    func cleanup() {
         guard #available(macOS 14.2, *) else { return }
         if let procID = ioProcID, aggregateID != 0 {
             AudioDeviceStop(aggregateID, procID)

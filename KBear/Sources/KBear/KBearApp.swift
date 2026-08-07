@@ -2,6 +2,17 @@ import SwiftUI
 import AppKit
 import CoreGraphics
 
+@main
+struct KBearApp: App {
+    @NSApplicationDelegateAdaptor(KBearAppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        Settings {
+            EmptyView()
+        }
+    }
+}
+
 final class KBearHostingController: NSHostingController<MenuView> {
     weak var popover: NSPopover?
 
@@ -20,15 +31,12 @@ final class KBearHostingController: NSHostingController<MenuView> {
 final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var statusItem: NSStatusItem?
     var popover: NSPopover?
-    var fallbackWindow: NSWindow?
-    var visibilityTimer: Timer?
-    var popoverIsOpen = false
     var shouldReopenPopoverAfterPermission = false
     var audio: KBearAudio { KBearAudio.shared }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         audio.permissionPromptHandler = { [weak self] in
-            self?.shouldReopenPopoverAfterPermission = self?.popoverIsOpen ?? false
+            self?.shouldReopenPopoverAfterPermission = self?.popover?.isShown ?? false
             NSApp.activate(ignoringOtherApps: true)
         }
         audio.permissionGrantedHandler = { [weak self] in
@@ -37,17 +45,11 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             self?.showPopover(nil)
         }
         MenuBarVisibilityRepair.repairHiddenVisibilityDefaults(for: "codes.ernest.tonos")
-        createFallbackWindow()
         createStatusItem()
-        scheduleVisibilityCheck()
-    }
-
-    func applicationDidBecomeActive(_ notification: Notification) {
-        syncFallbackWindowVisibility()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        visibilityTimer?.invalidate()
+        audio.cleanup()
     }
 
     func createStatusItem() {
@@ -112,8 +114,6 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
             popover = p
         }
         shouldReopenPopoverAfterPermission = false
-        popoverIsOpen = true
-        syncFallbackWindowVisibility()
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         NSApp.activate(ignoringOtherApps: true)
         if let popoverWindow = popover?.contentViewController?.view.window {
@@ -126,58 +126,7 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
     }
 
     func popoverDidClose(_ notification: Notification) {
-        popoverIsOpen = false
-        syncFallbackWindowVisibility()
-    }
-
-    func createFallbackWindow() {
-        guard fallbackWindow == nil else { return }
-        let hostingController = NSHostingController(rootView: MenuView(audio: audio))
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 520),
-            styleMask: [.titled, .closable, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "KBear"
-        panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = true
-        panel.isReleasedWhenClosed = false
-        panel.isExcludedFromWindowsMenu = true
-        panel.collectionBehavior = [.canJoinAllSpaces, .transient]
-        panel.contentViewController = hostingController
-        fallbackWindow = panel
-    }
-
-    func scheduleVisibilityCheck() {
-        // Give the status item a moment to appear; show the fallback panel once if it doesn't.
-        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.syncFallbackWindowVisibility()
-                self?.visibilityTimer?.invalidate()
-                self?.visibilityTimer = nil
-            }
-        }
-    }
-
-    func syncFallbackWindowVisibility() {
-        if popoverIsOpen {
-            fallbackWindow?.orderOut(nil)
-            return
-        }
-        guard let item = statusItem, item.isOnScreen else {
-            showFallbackWindowIfNeeded()
-            return
-        }
-        fallbackWindow?.orderOut(nil)
-    }
-
-    private var hasShownFallback = false
-
-    func showFallbackWindowIfNeeded() {
-        guard !hasShownFallback, fallbackWindow?.isVisible != true else { return }
-        hasShownFallback = true
-        fallbackWindow?.orderFrontRegardless()
+        shouldReopenPopoverAfterPermission = false
     }
 
     func restartApp() {
@@ -191,26 +140,5 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         try? task.run()
         NSApp.terminate(nil)
     }
-}
 
-extension NSStatusItem {
-    @MainActor
-    var isOnScreen: Bool {
-        guard isVisible else { return false }
-        let frame = button?.window?.frame ?? .null
-        guard frame != .null else { return false }
-        return frame.minX >= 0 && frame.minY >= 0
-    }
-}
-
-@main
-struct KBearApp: App {
-    @NSApplicationDelegateAdaptor(KBearAppDelegate.self) var appDelegate
-
-    var body: some Scene {
-        Settings {
-            MenuView(audio: KBearAudio.shared)
-                .frame(width: 320)
-        }
-    }
 }
