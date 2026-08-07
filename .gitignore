@@ -2,12 +2,9 @@
 .build
 
 # Generated app bundles and disk images
-PitchSystem/*.app
-PitchSystem/*.dmg
-PitchSystem/.dmg-staging
-PitchYouTube/PitchYouTube.app
-PitchYouTube/*.dmg
-PitchYouTube/.dmg-staging
+KBear/*.app
+KBear/*.dmg
+KBear/.dmg-staging
 
 # Temporary gitconfigs used for pushing
 *.tmp_gitconfig

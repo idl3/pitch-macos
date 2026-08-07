@@ -5,6 +5,7 @@ import CoreAudio
 struct MenuView: View {
     @ObservedObject var audio: KBearAudio
     @State private var showingPresets = false
+    @State private var showingQuitConfirmation = false
 
     var body: some View {
         ZStack {
@@ -19,6 +20,14 @@ struct MenuView: View {
         .animation(.easeInOut(duration: 0.2), value: showingPresets)
         .frame(width: 360)
         .fixedSize(horizontal: false, vertical: true)
+        .alert("Quit KBear?", isPresented: $showingQuitConfirmation) {
+            Button("Quit", role: .destructive) {
+                NSApplication.shared.terminate(nil)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to quit?")
+        }
     }
 
     // MARK: - Main panel
@@ -52,10 +61,19 @@ struct MenuView: View {
             }
 
             if !audio.statusText.isEmpty {
-                Text(audio.statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(audio.statusText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if audio.needsRestart {
+                        Button("Restart KBear") {
+                            (NSApplication.shared.delegate as? KBearAppDelegate)?.restartApp()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding()
@@ -168,18 +186,7 @@ struct MenuView: View {
             .help("Song presets")
 
             Button {
-                if let url = URL(string: "x-apple.systempreferences:com.apple.MenuBarSettings") {
-                    NSWorkspace.shared.open(url)
-                }
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 14, weight: .medium))
-            }
-            .buttonStyle(.borderless)
-            .help("Open Menu Bar Settings")
-
-            Button {
-                NSApplication.shared.terminate(nil)
+                showingQuitConfirmation = true
             } label: {
                 Image(systemName: "power")
                     .font(.system(size: 14, weight: .medium))

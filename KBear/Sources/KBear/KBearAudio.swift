@@ -154,6 +154,7 @@ final class KBearAudio: ObservableObject {
         didSet { if selectedOutputID != oldValue { applySelectedOutput() } }
     }
     @Published var statusText = ""
+    @Published var needsRestart = false
     @Published var presets: [SongPreset] = []
     @Published var selectedPresetID: UUID? = nil
     @Published var newPresetName: String = ""
@@ -194,13 +195,16 @@ final class KBearAudio: ObservableObject {
         guard shouldRun != isEngineRunning else { return }
         if shouldRun {
             guard requestAudioPermissionIfNeeded() else {
-                statusText = "Allow Screen & System Audio Recording to use KBear"
+                if !needsRestart {
+                    statusText = "Allow Screen & System Audio Recording to use KBear"
+                }
                 return
             }
             do {
                 try setup()
                 try engine?.start()
                 isEngineRunning = true
+                needsRestart = false
                 statusText = ""
             } catch {
                 cleanup()
@@ -216,8 +220,10 @@ final class KBearAudio: ObservableObject {
 
     private func requestAudioPermissionIfNeeded() -> Bool {
         if #available(macOS 11.0, *) {
-            if CGPreflightScreenCaptureAccess() { return true }
-            guard permissionCheckTimer == nil else { return false }
+            if CGPreflightScreenCaptureAccess() {
+                needsRestart = false
+                return true
+            }
             permissionPromptHandler?()
             CGRequestScreenCaptureAccess()
             startPermissionPoll()
@@ -229,6 +235,7 @@ final class KBearAudio: ObservableObject {
     private func startPermissionPoll() {
         permissionCheckTimer?.invalidate()
         permissionPollAttempts = 0
+        needsRestart = false
         permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.checkPermissionPoll()
@@ -242,6 +249,7 @@ final class KBearAudio: ObservableObject {
                 permissionCheckTimer?.invalidate()
                 permissionCheckTimer = nil
                 permissionPollAttempts = 0
+                needsRestart = false
                 statusText = ""
                 permissionGrantedHandler?()
                 updateEngine()
@@ -249,11 +257,16 @@ final class KBearAudio: ObservableObject {
             }
         }
         permissionPollAttempts += 1
+        if permissionPollAttempts == 6 {
+            needsRestart = true
+            statusText = "Permission may be enabled. Restart KBear to apply."
+        }
         if permissionPollAttempts >= 60 {
             permissionCheckTimer?.invalidate()
             permissionCheckTimer = nil
             permissionPollAttempts = 0
-            statusText = "Permission not granted. Enable in System Settings → Privacy & Security."
+            needsRestart = true
+            statusText = "Permission not granted. Enable in System Settings → Privacy & Security, then restart KBear."
         }
     }
 
@@ -632,13 +645,48 @@ final class KBearAudio: ObservableObject {
         engine.connect(sourceNode!, to: timePitch!, format: format)
         engine.connect(timePitch!, to: engine.mainMixerNode, format: format)
 
-        // 5. Feed the ring buffer from the aggregate IOProc.
+        // 5. Feed the ring buffer from the aggregate IOProc. The ring stores
+        // interleaved float samples so the source-node callback can read L/R pairs.
         let ioBlock: AudioDeviceIOBlock = { [ring] _, inInputData, _, _, _ in
             guard inInputData.pointee.mNumberBuffers > 0 else { return }
             let list = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer<AudioBufferList>(mutating: inInputData))
-            for buffer in list {
-                guard let data = buffer.mData else { continue }
-                _ = ring.write(data, length: buffer.mDataByteSize)
+            let bufferCount = list.count
+
+            if bufferCount == 1 && list[0].mNumberChannels >= 2 {
+                // Already interleaved (one buffer with multiple channels).
+                guard let data = list[0].mData else { return }
+                _ = ring.write(data, length: list[0].mDataByteSize)
+            } else if bufferCount >= 2 {
+                // Non-interleaved: interleave channel 0 and 1 into the ring.
+                let lBuf = list[0]
+                let rBuf = list[1]
+                guard let lData = lBuf.mData, let rData = rBuf.mData else { return }
+                let frameSize = UInt32(MemoryLayout<Float>.size)
+                let frames = lBuf.mDataByteSize / frameSize
+                let totalBytes = frames * 2 * frameSize
+                guard let head = ring.prepareWrite(length: totalBytes) else { return }
+                let dst = head.assumingMemoryBound(to: Float.self)
+                let l = lData.assumingMemoryBound(to: Float.self)
+                let r = rData.assumingMemoryBound(to: Float.self)
+                for i in 0..<Int(frames) {
+                    dst[i * 2] = l[i]
+                    dst[i * 2 + 1] = r[i]
+                }
+                ring.produce(length: totalBytes)
+            } else {
+                // Single channel: duplicate to both sides as pseudo-interleaved.
+                guard let data = list[0].mData else { return }
+                let frameSize = UInt32(MemoryLayout<Float>.size)
+                let frames = list[0].mDataByteSize / frameSize
+                let totalBytes = frames * 2 * frameSize
+                guard let head = ring.prepareWrite(length: totalBytes) else { return }
+                let dst = head.assumingMemoryBound(to: Float.self)
+                let src = data.assumingMemoryBound(to: Float.self)
+                for i in 0..<Int(frames) {
+                    dst[i * 2] = src[i]
+                    dst[i * 2 + 1] = src[i]
+                }
+                ring.produce(length: totalBytes)
             }
         }
 

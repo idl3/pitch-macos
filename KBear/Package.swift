@@ -18,7 +18,7 @@ let package = Package(
         .executableTarget(
             name: "KBear",
             dependencies: ["TPCircularBuffer"],
-            path: "Sources/PitchSystem",
+            path: "Sources/KBear",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]

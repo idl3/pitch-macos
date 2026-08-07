@@ -35,4 +35,14 @@ final class RingBuffer: @unchecked Sendable {
         _ = TPCircularBufferTail(&buffer, &available)
         return available
     }
+
+    func prepareWrite(length: UInt32) -> UnsafeMutableRawPointer? {
+        var available: UInt32 = 0
+        guard let head = TPCircularBufferHead(&buffer, &available), available >= length else { return nil }
+        return head
+    }
+
+    func produce(length: UInt32) {
+        TPCircularBufferProduce(&buffer, length)
+    }
 }

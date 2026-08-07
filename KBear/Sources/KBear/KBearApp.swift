@@ -187,6 +187,15 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         hasShownFallback = true
         fallbackWindow?.orderFrontRegardless()
     }
+
+    func restartApp() {
+        guard let bundlePath = Bundle.main.bundlePath as String? else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        task.arguments = ["-n", bundlePath]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
 }
 
 extension NSStatusItem {
