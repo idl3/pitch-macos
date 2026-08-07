@@ -18,11 +18,18 @@ enum PitchControlMode: String, CaseIterable {
     case cents = "Cents"
 }
 
+enum VocalRemovalMode: String, CaseIterable {
+    case off = "Off"
+    case monoCut = "Mono cut"
+    case karaoke = "Karaoke"
+    case wide = "Wide"
+}
+
 /// Lock-protected parameters read from the real-time audio render thread.
 final class AudioParameters: @unchecked Sendable {
     private let lock = NSLock()
     private var _volume: Float = 1.0
-    private var _vocalRemovalEnabled: Bool = false
+    private var _vocalRemovalMode: String = VocalRemovalMode.off.rawValue
 
     var volume: Float {
         lock.lock()
@@ -36,15 +43,15 @@ final class AudioParameters: @unchecked Sendable {
         lock.unlock()
     }
 
-    var vocalRemovalEnabled: Bool {
+    var vocalRemovalMode: VocalRemovalMode {
         lock.lock()
         defer { lock.unlock() }
-        return _vocalRemovalEnabled
+        return VocalRemovalMode(rawValue: _vocalRemovalMode) ?? .off
     }
 
-    func setVocalRemovalEnabled(_ value: Bool) {
+    func setVocalRemovalMode(_ value: VocalRemovalMode) {
         lock.lock()
-        _vocalRemovalEnabled = value
+        _vocalRemovalMode = value.rawValue
         lock.unlock()
     }
 }
@@ -69,8 +76,8 @@ final class PitchSystemAudio: ObservableObject {
     @Published var volume: Float = 1.0 {
         didSet { audioParams.setVolume(volume) }
     }
-    @Published var vocalRemovalEnabled: Bool = false {
-        didSet { audioParams.setVocalRemovalEnabled(vocalRemovalEnabled) }
+    @Published var vocalRemovalMode: VocalRemovalMode = .off {
+        didSet { audioParams.setVocalRemovalMode(vocalRemovalMode) }
     }
     @Published var outputDevices: [OutputDevice] = []
     @Published var selectedOutputID: AudioDeviceID? = nil {
@@ -325,18 +332,34 @@ final class PitchSystemAudio: ObservableObject {
             let framesToCopy = min(frameCount, availableFrames)
             let copyBytes = framesToCopy * bytesPerFrame
             let src = tail.assumingMemoryBound(to: Float.self)
-            let removeVocals = audioParams.vocalRemovalEnabled
+            let vocalMode = audioParams.vocalRemovalMode
             let gain = audioParams.volume
             for i in 0..<Int(framesToCopy) {
-                var l = src[i * 2]
-                var r = src[i * 2 + 1]
-                if removeVocals {
+                let l = src[i * 2]
+                let r = src[i * 2 + 1]
+                let (vl, vr): (Float, Float)
+                switch vocalMode {
+                case .off:
+                    vl = l
+                    vr = r
+                case .monoCut:
+                    // Output the stereo-difference signal to both channels.
+                    // This strongly removes centered content (vocals/bass) and yields a mono result.
                     let diff = (l - r) * 0.5
-                    l = diff
-                    r = -diff
+                    vl = diff
+                    vr = diff
+                case .karaoke:
+                    // Left-minus-right / right-minus-left keeps a sense of stereo while canceling center.
+                    let diff = (l - r) * 0.5
+                    vl = diff
+                    vr = -diff
+                case .wide:
+                    // Partial subtraction: reduce centered vocals while preserving more stereo field.
+                    vl = l - r * 0.5
+                    vr = r - l * 0.5
                 }
-                left[i] = l * gain
-                right[i] = r * gain
+                left[i] = vl * gain
+                right[i] = vr * gain
             }
             TPCircularBufferConsume(&ring.buffer, copyBytes)
 

@@ -7,9 +7,7 @@ let package = Package(
     products: [
         .executable(name: "Tonos", targets: ["Tonos"])
     ],
-    dependencies: [
-        .package(url: "https://github.com/orchetect/MenuBarExtraAccess.git", from: "1.3.0")
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "TPCircularBuffer",
@@ -19,7 +17,7 @@ let package = Package(
         ),
         .executableTarget(
             name: "Tonos",
-            dependencies: ["TPCircularBuffer", .product(name: "MenuBarExtraAccess", package: "MenuBarExtraAccess")],
+            dependencies: ["TPCircularBuffer"],
             path: "Sources/PitchSystem",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")

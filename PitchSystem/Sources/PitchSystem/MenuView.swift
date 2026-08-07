@@ -13,8 +13,12 @@ struct MenuView: View {
             ))
             .toggleStyle(.switch)
 
-            Toggle("Remove vocals", isOn: $audio.vocalRemovalEnabled)
-                .toggleStyle(.switch)
+            Picker("Vocal removal", selection: $audio.vocalRemovalMode) {
+                ForEach(VocalRemovalMode.allCases, id: \.self) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
 
             Picker("Mode", selection: $audio.pitchControlMode) {
                 ForEach(PitchControlMode.allCases, id: \.self) { mode in
@@ -53,7 +57,7 @@ struct MenuView: View {
 
             HStack {
                 Text("Volume")
-                Slider(value: $audio.volume, in: 0...1)
+                Slider(value: $audio.volume, in: 0...2)
                 Text(String(format: "%d%%", Int(audio.volume * 100)))
                     .frame(width: 40, alignment: .trailing)
             }

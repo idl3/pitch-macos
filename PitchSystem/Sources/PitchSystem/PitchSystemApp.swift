@@ -1,17 +1,19 @@
 import SwiftUI
 import AppKit
-import MenuBarExtraAccess
 
 @MainActor
-final class TonosAppDelegate: NSObject, NSApplicationDelegate {
+final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var statusItem: NSStatusItem?
+    var popover: NSPopover?
     var fallbackWindow: NSWindow?
     var visibilityTimer: Timer?
+    var popoverIsOpen = false
     var audio: PitchSystemAudio { PitchSystemAudio.shared }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         MenuBarVisibilityRepair.repairHiddenVisibilityDefaults()
         createFallbackWindow()
+        createStatusItem()
         scheduleVisibilityCheck()
     }
 
@@ -21,6 +23,43 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         visibilityTimer?.invalidate()
+    }
+
+    func createStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = "codes.ernest.tonos"
+        item.behavior = .terminationOnRemoval
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "slider.horizontal.below.rectangle", accessibilityDescription: "Tonos")
+            button.toolTip = "Tonos"
+            button.action = #selector(showPopover(_:))
+            button.target = self
+        }
+        statusItem = item
+        MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.tonos")
+    }
+
+    @objc func showPopover(_ sender: Any?) {
+        guard let button = statusItem?.button else { return }
+        if popover == nil {
+            let p = NSPopover()
+            p.behavior = .transient
+            p.contentViewController = NSHostingController(rootView: MenuView(audio: audio))
+            p.delegate = self
+            popover = p
+        }
+        popoverIsOpen = true
+        syncFallbackWindowVisibility()
+        popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
+    func closePopover() {
+        popover?.close()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        popoverIsOpen = false
+        syncFallbackWindowVisibility()
     }
 
     func createFallbackWindow() {
@@ -35,9 +74,8 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func scheduleVisibilityCheck() {
-        // Show the window immediately; the first timer tick will decide whether to hide it.
-        showFallbackWindow()
-        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // Wait briefly for the status item to materialize before deciding to show the fallback window.
+        visibilityTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.syncFallbackWindowVisibility()
             }
@@ -45,15 +83,15 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func syncFallbackWindowVisibility() {
-        guard let item = statusItem else {
+        if popoverIsOpen {
+            fallbackWindow?.orderOut(nil)
+            return
+        }
+        guard let item = statusItem, item.isOnScreen else {
             showFallbackWindow()
             return
         }
-        if item.isOnScreen {
-            fallbackWindow?.orderOut(nil)
-        } else {
-            showFallbackWindow()
-        }
+        fallbackWindow?.orderOut(nil)
     }
 
     func showFallbackWindow() {
@@ -75,31 +113,11 @@ extension NSStatusItem {
 @main
 struct TonosApp: App {
     @NSApplicationDelegateAdaptor(TonosAppDelegate.self) var appDelegate
-    @State private var isMenuPresented = false
-    @State private var isMenuEnabled = true
 
     var body: some Scene {
-        MenuBarExtra {
+        Settings {
             MenuView(audio: PitchSystemAudio.shared)
-        } label: {
-            Image(systemName: "slider.horizontal.below.rectangle")
-                .renderingMode(.template)
+                .frame(width: 320)
         }
-        .menuBarExtraAccess(
-            isPresented: $isMenuPresented,
-            isEnabled: $isMenuEnabled
-        ) { statusItem in
-            statusItem.autosaveName = "codes.ernest.tonos"
-            statusItem.behavior = .terminationOnRemoval
-            MenuBarVisibilityRepair.clearVisibilityDefault(for: "codes.ernest.tonos")
-
-            appDelegate.statusItem = statusItem
-
-            // If macOS parks the menu-bar icon off-screen (Tahoe/Sequoia), keep the fallback window visible.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                appDelegate.syncFallbackWindowVisibility()
-            }
-        }
-        .menuBarExtraStyle(.window)
     }
 }
