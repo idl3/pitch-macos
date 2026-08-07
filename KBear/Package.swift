@@ -15,13 +15,23 @@ let package = Package(
             publicHeadersPath: "include",
             cSettings: [.headerSearchPath("include")]
         ),
-        .executableTarget(
-            name: "KBear",
+        .target(
+            name: "KBearLib",
             dependencies: ["TPCircularBuffer"],
-            path: "Sources/KBear",
+            path: "Sources/KBearLib",
             swiftSettings: [
                 .enableUpcomingFeature("StrictConcurrency")
             ]
+        ),
+        .executableTarget(
+            name: "KBear",
+            dependencies: ["KBearLib"],
+            path: "Sources/KBear"
+        ),
+        .testTarget(
+            name: "KBearTests",
+            dependencies: ["KBearLib"],
+            path: "Tests/KBearTests"
         )
     ]
 )
