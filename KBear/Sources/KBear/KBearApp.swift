@@ -29,25 +29,17 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
     func applicationDidFinishLaunching(_ notification: Notification) {
         audio.permissionPromptHandler = { [weak self] in
             self?.shouldReopenPopoverAfterPermission = self?.popoverIsOpen ?? false
+            NSApp.activate(ignoringOtherApps: true)
         }
         audio.permissionGrantedHandler = { [weak self] in
             guard self?.shouldReopenPopoverAfterPermission == true else { return }
             self?.shouldReopenPopoverAfterPermission = false
             self?.showPopover(nil)
         }
-        requestAudioPermissionIfNeeded()
-        MenuBarVisibilityRepair.repairHiddenVisibilityDefaults()
+        MenuBarVisibilityRepair.repairHiddenVisibilityDefaults(for: "codes.ernest.tonos")
         createFallbackWindow()
         createStatusItem()
         scheduleVisibilityCheck()
-    }
-
-    private func requestAudioPermissionIfNeeded() {
-        if #available(macOS 11.0, *) {
-            if !CGPreflightScreenCaptureAccess() {
-                CGRequestScreenCaptureAccess()
-            }
-        }
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
@@ -190,9 +182,12 @@ final class KBearAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
 
     func restartApp() {
         guard let bundlePath = Bundle.main.bundlePath as String? else { return }
+        let relauncher = "sleep 0.5; open -na \"\(bundlePath)\""
         let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        task.arguments = ["-n", bundlePath]
+        task.launchPath = "/usr/bin/nohup"
+        task.arguments = ["/bin/sh", "-c", relauncher]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
         try? task.run()
         NSApp.terminate(nil)
     }
