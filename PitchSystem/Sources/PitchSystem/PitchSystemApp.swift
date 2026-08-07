@@ -44,6 +44,7 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         if popover == nil {
             let p = NSPopover()
             p.behavior = .transient
+            p.contentSize = NSSize(width: 380, height: 520)
             p.contentViewController = NSHostingController(rootView: MenuView(audio: audio))
             p.delegate = self
             popover = p
@@ -51,6 +52,10 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         popoverIsOpen = true
         syncFallbackWindowVisibility()
         popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        NSApp.activate(ignoringOtherApps: true)
+        if let popoverWindow = popover?.contentViewController?.view.window {
+            popoverWindow.makeKeyAndOrderFront(nil)
+        }
     }
 
     func closePopover() {
@@ -67,7 +72,7 @@ final class TonosAppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate
         let hostingController = NSHostingController(rootView: MenuView(audio: audio))
         let window = NSWindow(contentViewController: hostingController)
         window.title = "Tonos"
-        window.setContentSize(NSSize(width: 360, height: 300))
+        window.setContentSize(NSSize(width: 360, height: 520))
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         fallbackWindow = window

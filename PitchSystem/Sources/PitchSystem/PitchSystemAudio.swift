@@ -13,23 +13,38 @@ struct OutputDevice: Identifiable, Hashable {
     var id: AudioDeviceID { audioID }
 }
 
-enum PitchControlMode: String, CaseIterable {
+enum PitchControlMode: String, CaseIterable, Codable {
     case semitones = "Semitones"
     case cents = "Cents"
 }
 
-enum VocalRemovalMode: String, CaseIterable {
+enum VocalRemovalMode: String, CaseIterable, Codable {
     case off = "Off"
-    case monoCut = "Mono cut"
-    case karaoke = "Karaoke"
+    case mono = "Mono"
     case wide = "Wide"
+    case karaoke = "Karaoke"
+    case aggressive = "Aggressive"
+    case custom = "Custom"
+}
+
+struct SongPreset: Identifiable, Codable, Hashable {
+    let id: UUID
+    var name: String
+    var pitchSemitones: Int
+    var pitchCents: Float
+    var pitchControlMode: PitchControlMode
+    var volume: Float
+    var vocalRemovalMode: VocalRemovalMode
+    var vocalMono: Float
+    var vocalKaraoke: Float
 }
 
 /// Lock-protected parameters read from the real-time audio render thread.
 final class AudioParameters: @unchecked Sendable {
     private let lock = NSLock()
     private var _volume: Float = 1.0
-    private var _vocalRemovalMode: String = VocalRemovalMode.off.rawValue
+    private var _vocalMono: Float = 0.0
+    private var _vocalKaraoke: Float = 0.0
 
     var volume: Float {
         lock.lock()
@@ -43,15 +58,22 @@ final class AudioParameters: @unchecked Sendable {
         lock.unlock()
     }
 
-    var vocalRemovalMode: VocalRemovalMode {
+    var vocalMono: Float {
         lock.lock()
         defer { lock.unlock() }
-        return VocalRemovalMode(rawValue: _vocalRemovalMode) ?? .off
+        return _vocalMono
     }
 
-    func setVocalRemovalMode(_ value: VocalRemovalMode) {
+    var vocalKaraoke: Float {
         lock.lock()
-        _vocalRemovalMode = value.rawValue
+        defer { lock.unlock() }
+        return _vocalKaraoke
+    }
+
+    func setVocalBlend(mono: Float, karaoke: Float) {
+        lock.lock()
+        _vocalMono = mono
+        _vocalKaraoke = karaoke
         lock.unlock()
     }
 }
@@ -77,13 +99,33 @@ final class PitchSystemAudio: ObservableObject {
         didSet { audioParams.setVolume(volume) }
     }
     @Published var vocalRemovalMode: VocalRemovalMode = .off {
-        didSet { audioParams.setVocalRemovalMode(vocalRemovalMode) }
+        didSet {
+            guard !isUpdatingVocalBlend else { return }
+            applyVocalRemovalMode(vocalRemovalMode)
+        }
+    }
+    @Published var vocalMono: Float = 0.0 {
+        didSet {
+            guard !isUpdatingVocalBlend else { return }
+            audioParams.setVocalBlend(mono: vocalMono, karaoke: vocalKaraoke)
+            updateVocalRemovalModeFromBlend()
+        }
+    }
+    @Published var vocalKaraoke: Float = 0.0 {
+        didSet {
+            guard !isUpdatingVocalBlend else { return }
+            audioParams.setVocalBlend(mono: vocalMono, karaoke: vocalKaraoke)
+            updateVocalRemovalModeFromBlend()
+        }
     }
     @Published var outputDevices: [OutputDevice] = []
     @Published var selectedOutputID: AudioDeviceID? = nil {
         didSet { if selectedOutputID != oldValue { applySelectedOutput() } }
     }
     @Published var statusText = ""
+    @Published var presets: [SongPreset] = []
+    @Published var selectedPresetID: UUID? = nil
+    @Published var newPresetName: String = ""
 
     private var engine: AVAudioEngine?
     private var timePitch: AVAudioUnitTimePitch?
@@ -96,9 +138,12 @@ final class PitchSystemAudio: ObservableObject {
     private let ioQueue = DispatchQueue(label: "codes.ernest.tonos.io", qos: .userInteractive)
     private let ringCapacity = UInt32(1 << 19)
     private let audioParams = AudioParameters()
+    private var isUpdatingVocalBlend = false
     private var deviceListener: AudioObjectPropertyListenerBlock?
+    private let presetsKey = "codes.ernest.tonos.presets"
 
     init() {
+        loadPresets()
         refreshOutputDevices()
         startListeningForDeviceChanges()
     }
@@ -235,6 +280,107 @@ final class PitchSystemAudio: ObservableObject {
         }
     }
 
+    // MARK: - Vocal removal blend
+
+    private func applyVocalRemovalMode(_ mode: VocalRemovalMode) {
+        isUpdatingVocalBlend = true
+        switch mode {
+        case .off:
+            vocalMono = 0
+            vocalKaraoke = 0
+        case .mono:
+            vocalMono = 1
+            vocalKaraoke = 0
+        case .wide:
+            vocalMono = 0.25
+            vocalKaraoke = 0.75
+        case .karaoke:
+            vocalMono = 0
+            vocalKaraoke = 1
+        case .aggressive:
+            // Mostly karaoke with just enough mono mix to stay audible on mono downmixes.
+            vocalMono = 0.2
+            vocalKaraoke = 1
+        case .custom:
+            break
+        }
+        audioParams.setVocalBlend(mono: vocalMono, karaoke: vocalKaraoke)
+        isUpdatingVocalBlend = false
+    }
+
+    private func updateVocalRemovalModeFromBlend() {
+        let m = vocalMono
+        let k = vocalKaraoke
+        let near: (Float, Float) -> Bool = { abs($0 - $1) < 0.01 }
+        if near(m, 0) && near(k, 0) {
+            vocalRemovalMode = .off
+        } else if near(m, 1) && near(k, 0) {
+            vocalRemovalMode = .mono
+        } else if near(m, 0) && near(k, 1) {
+            vocalRemovalMode = .karaoke
+        } else if near(m, 0.25) && near(k, 0.75) {
+            vocalRemovalMode = .wide
+        } else if near(m, 0.2) && near(k, 1) {
+            vocalRemovalMode = .aggressive
+        } else {
+            vocalRemovalMode = .custom
+        }
+    }
+
+    // MARK: - Song presets
+
+    func savePreset(name: String) {
+        guard !name.isEmpty else { return }
+        let preset = SongPreset(
+            id: UUID(),
+            name: name,
+            pitchSemitones: pitchSemitones,
+            pitchCents: pitchCents,
+            pitchControlMode: pitchControlMode,
+            volume: volume,
+            vocalRemovalMode: vocalRemovalMode,
+            vocalMono: vocalMono,
+            vocalKaraoke: vocalKaraoke
+        )
+        if let index = presets.firstIndex(where: { $0.name == name }) {
+            presets[index] = preset
+        } else {
+            presets.append(preset)
+        }
+        storePresets()
+    }
+
+    func loadPreset(_ preset: SongPreset) {
+        pitchControlMode = preset.pitchControlMode
+        pitchCents = preset.pitchCents
+        pitchSemitones = preset.pitchSemitones
+        volume = preset.volume
+        vocalRemovalMode = preset.vocalRemovalMode
+        vocalMono = preset.vocalMono
+        vocalKaraoke = preset.vocalKaraoke
+        selectedPresetID = preset.id
+    }
+
+    func deletePreset(_ preset: SongPreset) {
+        presets.removeAll { $0.id == preset.id }
+        if selectedPresetID == preset.id { selectedPresetID = nil }
+        storePresets()
+    }
+
+    private func storePresets() {
+        guard let data = try? JSONEncoder().encode(presets) else { return }
+        UserDefaults.standard.set(data, forKey: presetsKey)
+    }
+
+    private func loadPresets() {
+        guard let data = UserDefaults.standard.data(forKey: presetsKey),
+              let decoded = try? JSONDecoder().decode([SongPreset].self, from: data) else {
+            presets = []
+            return
+        }
+        presets = decoded
+    }
+
     private func setup() throws {
         guard #available(macOS 14.2, *) else {
             throw NSError(domain: "PitchSystem", code: -1, userInfo: [NSLocalizedDescriptionKey: "Requires macOS 14.2+"])
@@ -332,34 +478,28 @@ final class PitchSystemAudio: ObservableObject {
             let framesToCopy = min(frameCount, availableFrames)
             let copyBytes = framesToCopy * bytesPerFrame
             let src = tail.assumingMemoryBound(to: Float.self)
-            let vocalMode = audioParams.vocalRemovalMode
+            let mono = audioParams.vocalMono
+            let karaoke = audioParams.vocalKaraoke
+            let total = mono + karaoke
+            let blendScale = total > 1.0 ? (1.0 / total) : 1.0
             let gain = audioParams.volume
             for i in 0..<Int(framesToCopy) {
                 let l = src[i * 2]
                 let r = src[i * 2 + 1]
-                let (vl, vr): (Float, Float)
-                switch vocalMode {
-                case .off:
-                    vl = l
-                    vr = r
-                case .monoCut:
-                    // Output the stereo-difference signal to both channels.
-                    // This strongly removes centered content (vocals/bass) and yields a mono result.
-                    let diff = (l - r) * 0.5
-                    vl = diff
-                    vr = diff
-                case .karaoke:
-                    // Left-minus-right / right-minus-left keeps a sense of stereo while canceling center.
-                    let diff = (l - r) * 0.5
-                    vl = diff
-                    vr = -diff
-                case .wide:
-                    // Partial subtraction: reduce centered vocals while preserving more stereo field.
-                    vl = l - r * 0.5
-                    vr = r - l * 0.5
+                let side = (l - r) * 0.5
+
+                // Blend a mono side signal and a karaoke (out-of-phase right) side signal.
+                // total > 1 is normalized so the left channel never exceeds the original side amplitude.
+                let leftSample = (mono + karaoke) * blendScale * side
+                let rightSample = (mono - karaoke) * blendScale * side
+
+                if total <= .leastNormalMagnitude {
+                    left[i] = l * gain
+                    right[i] = r * gain
+                } else {
+                    left[i] = leftSample * gain
+                    right[i] = rightSample * gain
                 }
-                left[i] = vl * gain
-                right[i] = vr * gain
             }
             TPCircularBufferConsume(&ring.buffer, copyBytes)
 
